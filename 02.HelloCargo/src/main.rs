@@ -11,7 +11,7 @@ fn main() {
         // let foo = 1;
         // foo = 2; // error: cannot assign twice to immutable variable [E0384]
         let mut guess = String::new();
-    
+        
         io::stdin().read_line(&mut guess)
             .expect("Failed to read line");
     
