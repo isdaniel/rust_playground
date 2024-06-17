@@ -13,7 +13,6 @@ fn foo(x: i32) -> i32 {
     x + 5 // return 5;
 }
 
-
 fn main() {
     let spaces = "    !";
     print_type_of(&spaces);
