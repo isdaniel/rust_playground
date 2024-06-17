@@ -37,7 +37,22 @@ fn main() {
     let len = string_mut_length(&mut s1);
     println!("The length of '{}' is {}", s1, len);
     print_split_line();
-    //Dangling Reference
+
+    //slice of string
+    let mut s = String::from("hello world");
+    let word = first_works(&s);
+    println!("first word is {}, second word is {}", &s[..word], &s[word..]);
+    println!("first word is {}", first_works_slice(&s));
+
+    let arr = [1,2,3,4,5];
+    let slice: &[i32] = &arr[1..3];
+    sample(slice);
+}
+
+fn sample(arr : &[i32]){
+    for i in arr.iter() {
+        print!("{} ", i);
+    }
 }
 
 fn take_owership(mut str : String) {
@@ -74,3 +89,29 @@ fn string_mut_length(str : &mut String) -> usize {
 //     let s = String::from("hello");
 //     &s
 // }
+
+fn first_works(s:&str) -> usize {
+    let bytes = s.as_bytes();
+    for (i,&item) in bytes.iter().enumerate() {
+        if item == b' ' {
+            return i;
+            
+        }
+    }
+
+    s.len()
+}
+
+//parameter is &str, so it's slice of string
+fn first_works_slice(s:&str) -> &str {
+    let bytes = s.as_bytes();
+    for (i,&item) in bytes.iter().enumerate() {
+        if item == b' ' {
+            return &s[..i]
+            
+        }
+    }
+
+    &s[..]
+}
+
