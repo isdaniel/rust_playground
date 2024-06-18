@@ -10,6 +10,24 @@ struct Rectangle{
     height: u32,
 }
 
+//declare function in struct would need to use impl keywork
+impl Rectangle {
+    fn area(&self) -> u32 {
+        self.width * self.height
+    }
+
+    fn can_hold(&self, other: &Rectangle) -> bool{
+        self.width > other.width && self.height > other.height
+    }
+    //
+    fn square(size : u32) -> Rectangle{
+        Rectangle{
+            width : size,
+            height : size
+        }
+    }
+}
+
 fn print_split_line() {
     println!("=================="); 
 }
@@ -43,5 +61,13 @@ fn main() {
     println!("Area of rectangle is {:#?}", rect);
     
     print_split_line(); //struct function
-    
+
+    println!("Struct function Area of rectangle is {}", rect.area());
+    let small_rect = Rectangle{width: 10, height: 10};
+    let bigge_rect = Rectangle{width: 10, height: 100};
+    println!("{}",rect.can_hold(&small_rect));
+    println!("{}",rect.can_hold(&bigge_rect));
+
+    print_split_line(); 
+    println!("Area of rectangle is {:#?}", Rectangle::square(10));
 }
