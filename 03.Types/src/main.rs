@@ -27,7 +27,7 @@ fn main() {
     let _y: f32 = 1.0; //f32
     //print_type_of(&_y);
 
-    print_split_line();
+    println!("=================="); 
     let tuple1: (i32, f64, &str) = (1, 2.0, "hello tuple");
     print_type_of(&tuple1);
     //println!("Tuple {} {} {}", tuple1.0, tuple1.1, tuple1.2);
@@ -35,7 +35,7 @@ fn main() {
     let (x, y, z) = tuple1;
     println!("value from tuple: {} {} {}", x, y, z);
 
-    print_split_line();
+    println!("=================="); 
     let arr: [i32; 5] = [1, 2, 3, 4, 5];
     let same_val_arr = [3; 5]; // [3, 3, 3, 3, 3]
     loop {
@@ -43,7 +43,7 @@ fn main() {
         println!("Array: {:?}", same_val_arr);
         break;
     }
-    print_split_line();
+    println!("=================="); 
 
     let x = 5;
     let y = {
@@ -52,6 +52,6 @@ fn main() {
     };
     println!("The value of y is: {}", y);
 
-    print_split_line();
+    println!("=================="); 
     println!("The value of foo is: {}", foo(5));
 }

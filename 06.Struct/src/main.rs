@@ -28,10 +28,6 @@ impl Rectangle {
     }
 }
 
-fn print_split_line() {
-    println!("=================="); 
-}
-
 fn build_user(email: String, username: String) -> User {
     User {
         email,
@@ -52,7 +48,7 @@ fn area(rect: &Rectangle) -> u32 {
 fn main() {
     let user1 = build_user(String::from("dd@gmail.com"), String::from("dd"));
     println!("user1 email: {} , {}", user1.email, user1.username);
-    print_split_line();
+    println!("=================="); 
     //let rect = (30,50);
     //println!("Area of rectangle is {}", area(rect));
     let rect = Rectangle{width: 30, height: 50};
@@ -60,7 +56,7 @@ fn main() {
     //println!("Area of rectangle is {:?}", rect);
     println!("Area of rectangle is {:#?}", rect);
     
-    print_split_line(); //struct function
+    println!("==================");  //struct function
 
     println!("Struct function Area of rectangle is {}", rect.area());
     let small_rect = Rectangle{width: 10, height: 10};
@@ -68,6 +64,7 @@ fn main() {
     println!("{}",rect.can_hold(&small_rect));
     println!("{}",rect.can_hold(&bigge_rect));
 
-    print_split_line(); 
+    println!("==================");  
     println!("Area of rectangle is {:#?}", Rectangle::square(10));
 }
+

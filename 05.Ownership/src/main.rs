@@ -6,7 +6,7 @@ fn main() {
     let mut s = String::from("hello");
     s.push_str(", world!");
     println!("{}", s);
-    print_split_line();
+    println!("=================="); 
 
     //move reference type
     let s1 = String::from("Hello");
@@ -20,7 +20,7 @@ fn main() {
     let x = 5;
     make_copy(x);
     println!("copy from value {}", x);
-    print_split_line();
+    println!("=================="); 
 
     // let s1 = gives_owner_ship();
     // let s2 = String::from("hello");
@@ -31,12 +31,12 @@ fn main() {
     let len = string_length(&s1);
     //s1 still valid, because we don't move ownership, and it's borrowed.
     println!("The length of '{}' is {}", s1, len);
-    print_split_line();
+    println!("=================="); 
 
     let mut s1 = s1;
     let len = string_mut_length(&mut s1);
     println!("The length of '{}' is {}", s1, len);
-    print_split_line();
+    println!("=================="); 
 
     //slice of string
     let mut s = String::from("hello world");

@@ -15,7 +15,7 @@ fn main() {
         println!("Number is not divisible by 4, 3, or 2");
     }
 
-    print_split_line();
+    println!("=================="); 
 
     match number{
         n if n % 4 == 0 => println!("Number is divisible by 4"),
@@ -24,7 +24,7 @@ fn main() {
         _ => println!("Number is not divisible by 4, 3, or 2"),
     }
     
-    print_split_line();
+    println!("=================="); 
 
     let condition = true;
 
@@ -36,7 +36,7 @@ fn main() {
     };
 
     println!("The value of number is: {}", number);
-    print_split_line();
+    println!("=================="); 
     let mut count = 0;
     loop {
         if count == 10 {
@@ -45,7 +45,7 @@ fn main() {
         println!("Again! {}", count);
         count+=1;
     }
-    print_split_line();
+    println!("=================="); 
     let res = loop {
         if count == 15 {
             break count * 2;
@@ -53,7 +53,7 @@ fn main() {
         count+=1;
     };
     println!("The value of res is: {}", res);
-    print_split_line();
+    println!("=================="); 
 
     let mut number = 3;
 
@@ -61,7 +61,7 @@ fn main() {
         println!("{}!", number);
         number -= 1;
     }
-    print_split_line();
+    println!("=================="); 
     let arr = [10, 20, 30, 40, 50];
     //arr.iter().for_each(|x| println!("The value is: {}", x));
     for element in arr.iter() {
