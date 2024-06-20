@@ -40,8 +40,6 @@ fn value_in_cents(coin: Coin) -> u32{
     }
 }
 
-
-
 fn main() {
     let q = Message::Quit;
     let m = Message::Move{x:1,y:2};

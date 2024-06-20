@@ -4,10 +4,6 @@ fn print_type_of<T>(_: &T) {
     println!("{}", std::any::type_name::<T>())
 }
 
-fn print_split_line() {
-    println!("=================="); 
-}
-
 /// Function that returns an integer
 fn foo(x: i32) -> i32 {
     x + 5 // return 5;
@@ -54,4 +50,5 @@ fn main() {
 
     println!("=================="); 
     println!("The value of foo is: {}", foo(5));
+    
 }
