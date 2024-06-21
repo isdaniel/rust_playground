@@ -1,4 +1,6 @@
+use std::io::Write;
 use std::{fs::File, io::Read};
+use std::error::Error;
 
 // fn read_username_from_file() -> Result<String, std::io::Error>{
 //     let mut f = File::open("hello.txt")?;
@@ -45,11 +47,17 @@ fn main() -> Result<(),Box<dyn Error>>{
             panic!("Problem opening the file: {:?}", error);
         }
     });
+    
+    
 
-    let f = File::open("hello.txt").expect("Failed to open hello.txt");
+    let mut f = File::options().read(true).write(true).create(true).open("hello.txt").expect("Failed to open hello.txt");
 
+    f.write(b"hello world, create")?;
 
     let result = read_username_from_file();
-
+    match result{
+        Ok(s) => println!("read from file: {}",s),
+        Err(e) => println!("Error: {}",e),
+    }
     Ok(())
 }
