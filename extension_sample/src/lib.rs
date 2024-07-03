@@ -1,10 +1,39 @@
 use pgrx::prelude::*;
+use get_if_addrs::{get_if_addrs,IfAddr};
+use std::error::Error;
 
 pgrx::pg_module_magic!();
 
 #[pg_extern]
 fn hello_extension_sample() -> &'static str {
     "Hello, extension_sample"
+}
+
+#[pg_extern]
+fn range(s:i32, e:i32) -> pgrx::Range<i32>{
+    (s..e).into()
+}
+
+
+#[pg_extern]
+fn get_server_ip() -> String {
+    match get_local_ip() {
+        Ok(ip) => ip,
+        Err(_) => "Failed to get IP address".to_string(),
+    }
+}
+
+fn get_local_ip() -> Result<String, Box<dyn Error>> {
+    let if_addrs = get_if_addrs()?;
+    for if_addr in if_addrs {
+        if let IfAddr::V4(ref ifv4) = if_addr.addr {
+            let ipv4 = ifv4.ip;
+            if !ipv4.is_loopback() {
+                return Ok(ipv4.to_string());
+            }
+        }
+    }
+    Err("No non-loopback IP address found".into())
 }
 
 #[cfg(any(test, feature = "pg_test"))]
