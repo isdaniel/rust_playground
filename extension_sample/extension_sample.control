@@ -1,0 +1,5 @@
+comment = 'extension_sample:  Created by pgrx'
+default_version = '@CARGO_VERSION@'
+module_pathname = '$libdir/extension_sample'
+relocatable = false
+superuser = true
