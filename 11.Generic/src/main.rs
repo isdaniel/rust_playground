@@ -1,3 +1,5 @@
+use Generic::{Tweet,Summary};
+
 fn largetst<T>(list: &[T]) -> T
     where T: PartialOrd + Copy {
     let mut largest = list[0];
@@ -29,6 +31,7 @@ impl<T,U> Point<T,U> {
     }
 }
 
+
 fn main() {
     let number_list = vec![34, 50, 25, 100, 65];
     let result = largetst::<i32>(&number_list);
@@ -48,5 +51,14 @@ fn main() {
     let p2 = Point { x: "Hello", y: 'c' };
     let p3 = p1.mixup(p2);
     println!("p3.x = {}, p3.y = {}", p3.x, p3.y);
+    println!("==================");
 
+    let tweet = Tweet {
+        username: String::from("horse_ebooks"),
+        content: String::from("of course, as you probably already know, people"),
+        reply: false,
+        retweet: false,
+    };
+    print!("1 new tweet: {}\r\n", tweet.summarize());
+    print!("{}", tweet.default_summarize());
 }
