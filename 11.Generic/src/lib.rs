@@ -32,3 +32,13 @@ impl Summary for Tweet {
         format!("{}: {}", self.username, self.content)
     }
 }
+
+//item implements the Summary trait
+pub fn Notify(item: impl Summary){
+    println!("Breaking news! {}", item.summarize());
+}
+
+//T implements the Summary trait (trait bound)
+pub fn Notify2<T: Summary>(item: T){
+    println!("Breaking news! {}", item.summarize());
+}
