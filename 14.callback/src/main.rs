@@ -5,6 +5,13 @@ fn main() {
     let simulated_user_specified_value = 10;
     let simulated_random_number = 7;
     gererate_workout(simulated_user_specified_value, simulated_random_number);
+    println!("====================");
+
+    let x = vec![1, 2, 3];
+    //let equal_to_x = move |z : Vec<i32>| z == x;
+    //can't use x here
+    //println!("Can't use x here: {:?}", x);
+    println!("====================");
 }
 
 struct Cacher<T>
