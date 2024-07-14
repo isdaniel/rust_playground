@@ -1,8 +1,9 @@
-use std::{fs, error::Error};
+use std::{fs, error::Error,env};
 
 pub struct Config {
     pub query: String,
     pub filename: String,
+    pub case_sensitive: bool,
 }
 
 pub fn run(config : Config) -> Result<(),Box<dyn Error>> {
@@ -21,7 +22,8 @@ impl Config {
         }
         let filename = &args[1];
         let query = &args[2];
-        Ok( Config { query: query.to_string(), filename: filename.to_string() })
+        let case_sensitive = env::var("CASE_INSENSITIVE").is_err();
+        Ok( Config { query: query.to_string(), filename: filename.to_string(),case_sensitive })
     }
 }
 
