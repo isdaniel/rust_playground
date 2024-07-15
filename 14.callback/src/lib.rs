@@ -7,10 +7,12 @@ pub struct Shoe {
 fn shoes_in_my_size(shoes: Vec<Shoe>, shoe_size: u32) -> Vec<Shoe> {
     shoes.into_iter().filter(|s| s.size == shoe_size).collect()
 }
+use crate::interator_lab::Counter;
 
 #[cfg(test)]
 mod tests{
     use crate::Shoe;
+    
     #[test]
     fn iterator_demonstration(){
         let v1 = vec![1, 2, 3];
@@ -52,6 +54,18 @@ mod tests{
             ]
         );
     }
-
+    
+    #[test]
+    fn calling_next_directly(){
+        let mut counter = Counter::new();
+        
+        assert_eq!(counter.next(), Some(1));
+        assert_eq!(counter.next(), Some(2));
+        assert_eq!(counter.next(), Some(3));
+        assert_eq!(counter.next(), Some(4));
+        assert_eq!(counter.next(), Some(5));
+        assert_eq!(counter.next(), None);
+    }
+    
 
 }
