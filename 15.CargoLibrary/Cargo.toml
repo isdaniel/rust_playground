@@ -1,0 +1,15 @@
+[package]
+name = "CargoLibrary"
+version = "0.1.0"
+edition = "2021"
+description = "A library for Cargo by danielshih lab"
+license = "MIT"
+authors = ["danielshih"]
+
+[dependencies]
+
+[profile.dev]
+opt-level = 0
+
+[profile.release]
+opt-level = 3
