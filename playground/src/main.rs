@@ -1,17 +1,21 @@
-use std::rc::Rc;
+struct User{
+    user_id : i32,
+    posts: Vec<String>
+}
 
-struct Truck{
-    capacity: u32,
+impl User {
+    fn set_id(&mut self, id: i32){
+        self.user_id = id;
+    }
 }
 
 fn main() {
-    let (truck_a,truck_b,truck_c) = (
-        Rc::new(Truck{capacity : 1}),
-        Rc::new(Truck{capacity : 2}),
-        Rc::new(Truck{capacity : 3}),
-    );
-    let facility_one = vec![Rc::clone(&truck_a),Rc::clone(&truck_b)];
-    let facility_one = vec![truck_b,truck_c];
+    let mut user = User{
+        user_id: 0,
+        posts: vec!["Post1".to_string(), "Post2".to_string()]
+    };
 
-    println!("Truck A capacity: {}", truck_a.capacity);
+    //let user_posts = user.posts;
+    user.user_id = 1;
+    user.set_id(1);
 }
