@@ -38,8 +38,11 @@ fn main() {
     println!("{}",person.fly());
     println!("{}",Pilot::fly(&person));    
     println!("{}",Wizard::fly(&person));    
-    
+
     println!("{}",<Human as Wizard>::fly1());
+    println!("=====================");
+    let func_sample = returns_closure();
+    println!("{}",func_sample(1));
 } 
 
 trait Wizard {
@@ -70,4 +73,8 @@ impl Human {
     fn fly(&self) -> String {
         String::from("Human fly!!")
     }
+}
+
+fn returns_closure() -> Box<dyn Fn(i32) -> i32> {
+    Box::new(|x| x + 1)
 }
