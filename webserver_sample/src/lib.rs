@@ -1,5 +1,5 @@
-use std::thread::{self, Thread};
-use std::sync::mpsc::{self, Receiver};
+use std::thread::{self};
+use std::sync::mpsc::{self};
 use std::sync::Arc;
 use std::sync::Mutex;
 
