@@ -1,70 +1,82 @@
 //https://www.shuttle.rs/blog/2023/09/27/rust-vs-go-comparison
-use std::{collections::HashMap, io::Error, net::SocketAddr};
-use reqwest::StatusCode;
-use serde::Deserialize;
-use axum::{extract::Query, routing::get, Router};
+use std::net::SocketAddr;
+use askama_axum::Template;
+use forecast::*;
+use axum::{
+     http::{Request, StatusCode},
+    response::{IntoResponse, Response},
+    routing::get,
+    Router,
+    extract::Query,
+};
 
-#[derive(Deserialize, Debug, Clone)]
-pub struct GeoResponse {
-    pub results: Vec<LatLong>,
-}
-
-#[derive(Deserialize)]
-pub struct WeatherQuery {
-	pub city: String,
-}
-
-#[derive(Deserialize, Debug, Clone)]
-pub struct LatLong {
-	pub latitude: f64,
-	pub longitude: f64,
-}
-
-
-async fn fetch_lat_long(city: &str) -> Result<LatLong, Box<dyn std::error::Error>> {
-	let endpoint = format!(
-    	"https://geocoding-api.open-meteo.com/v1/search?name={}&count=1&language=en&format=json",
-    	city
-	);
-	let response = reqwest::get(&endpoint).await?.json::<GeoResponse>().await?;
-    
-	response
-    	.results
-    	.get(0)
-    	.cloned()
-    	.ok_or("No results found".into())
+async fn weather(Query(params): Query<WeatherQuery>) -> Result<WeatherDisplay, AppError> {
+	let lat_long = fetch_lat_long(&params.city).await?;
+	let weather = fetch_weather(lat_long).await?;
+	Ok(WeatherDisplay::new(params.city, weather))
 }
 
 // basic handler that responds with a static string
-async fn index() -> &'static str {
-	"Index"
-}
-
-async fn weather(Query(params): Query<WeatherQuery>) -> Result<String, StatusCode> {
-    let lat_long = fetch_lat_long(&params.city)
-        .await
-        .map_err(|_| StatusCode::NOT_FOUND)?;
-    Ok(format!(
-        "{}: {}, {}",
-        params.city, lat_long.latitude, lat_long.longitude
-    ))
-
+async fn index() -> Result<(), AppError> {
+    try_thing()?;
+    Ok(())
 }
 
 async fn stats() -> &'static str {
 	"Stats"
 }
 
+fn try_thing() -> Result<(), anyhow::Error> {
+    anyhow::bail!("it failed!")
+}
+
+
+
+#[derive(Template)]
+#[template(path = "hello.html")]
+struct HelloTemplate<'a> {
+    name: &'a str,
+}
+
+
+async fn hello() -> HelloTemplate<'static> {
+    HelloTemplate { name: "world" }
+}
+
+
+// Make our own error that wraps `anyhow::Error`.
+struct AppError(anyhow::Error);
+
+// Tell axum how to convert `AppError` into a response.
+impl IntoResponse for AppError {
+    fn into_response(self) -> Response {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Something went wrong: {}", self.0),
+        )
+            .into_response()
+    }
+}
+
+// This enables using `?` on functions that return `Result<_, anyhow::Error>` to turn them into
+// `Result<_, AppError>`. That way you don't need to do that manually.
+impl<E> From<E> for AppError
+where
+    E: Into<anyhow::Error>,
+{
+    fn from(err: E) -> Self {
+        Self(err.into())
+    }
+}
+
 #[tokio::main]
 async fn main() {
     let app = Router::new()
-    .route("/", get(index))
+    .route("/", get(hello))
     .route("/weather", get(weather))
     .route("/stats", get(stats));
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
-    axum::Server::bind(&addr)
-        .serve(app.into_make_service())
-        .await
-        .unwrap();
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:3000").await.unwrap();
+    axum::serve(listener, app).await.unwrap();
 }

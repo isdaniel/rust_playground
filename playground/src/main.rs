@@ -9,7 +9,25 @@ impl User {
     }
 }
 
+fn move_testing(obj : &mut mytype) -> &mut mytype{
+    obj.a += 1;
+    obj.b += 1;
+    println!("obj: {:?}", obj);
+    obj
+}
+
+#[derive(Debug)]
+#[derive(Clone)]
+struct mytype{
+    a: i32,
+    b: i32
+}
+
 fn main() {
+    let mut a = mytype{a: 1, b: 1};
+    println!("obj: {:?}", move_testing(&mut a));
+    println!("obj: {:?}", move_testing(&mut a));
+
     let mut user = User{
         user_id: 0,
         posts: vec!["Post1".to_string(), "Post2".to_string()]
