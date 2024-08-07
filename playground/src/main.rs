@@ -1,3 +1,4 @@
+use std::{clone, fmt::format, fs::File, io::{Error, ErrorKind, Read}, rc::Rc};
 struct User{
     user_id : i32,
     posts: Vec<String>
@@ -23,7 +24,34 @@ struct mytype{
     b: i32
 }
 
+//todo make a linked list
+#[derive(Debug)]
+enum List {
+    Next(i32,Rc<List>),
+    Nil,
+}
+
+
 fn main() {
+    let mut list = Rc::new(List::Nil);
+    for i in 0..10 {
+        list = Rc::new(List::Next(i, list.clone()));
+    }
+    
+    while let List::Next(value, next) = list.as_ref() {
+        println!("Value: {}", value);
+        list = Rc::clone(&next);
+    }
+
+    // while let List::Next(value, next) = list {
+    //     println!("Value: {}", value);
+    //     list = Rc::clone(&next);
+    // }
+    // let a = List::Next(1, Rc::clone(&list));
+
+    // println!("List: {:?}", a);
+    println!("=====================");
+
     let mut a = mytype{a: 1, b: 1};
     println!("obj: {:?}", move_testing(&mut a));
     println!("obj: {:?}", move_testing(&mut a));
@@ -78,7 +106,21 @@ fn main() {
             println!("Found some other id: {}", id);
         }
     }
+
+    let msg = match result_func(){
+        Ok(s) => s,
+        Err(e) => format!("Error: {}", e),
+    };
+
+    println!("Result: {msg}");
 }
+
+fn result_func() -> Result<String, std::io::Error> {
+    let mut s = String::new();
+    File::open("hello.txt")?.read_to_string(&mut s)?;
+    Ok(s)
+}
+
 
 enum Message {
     Hello {id: i32},

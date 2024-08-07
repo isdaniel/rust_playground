@@ -1,5 +1,4 @@
 //https://www.shuttle.rs/blog/2023/09/27/rust-vs-go-comparison
-use std::net::SocketAddr;
 use askama_axum::Template;
 use forecast::*;
 use axum::{
@@ -9,6 +8,8 @@ use axum::{
     Router,
     extract::Query,
 };
+use axum_macros::debug_handler;
+use anyhow::Context;
 
 async fn weather(Query(params): Query<WeatherQuery>) -> Result<WeatherDisplay, AppError> {
 	let lat_long = fetch_lat_long(&params.city).await?;
@@ -16,31 +17,19 @@ async fn weather(Query(params): Query<WeatherQuery>) -> Result<WeatherDisplay, A
 	Ok(WeatherDisplay::new(params.city, weather))
 }
 
-// basic handler that responds with a static string
-async fn index() -> Result<(), AppError> {
-    try_thing()?;
-    Ok(())
-}
-
-async fn stats() -> &'static str {
-	"Stats"
-}
-
-fn try_thing() -> Result<(), anyhow::Error> {
-    anyhow::bail!("it failed!")
-}
-
-
-
 #[derive(Template)]
 #[template(path = "hello.html")]
 struct HelloTemplate<'a> {
     name: &'a str,
 }
 
-
-async fn hello() -> HelloTemplate<'static> {
+#[debug_handler]
+async fn index() -> HelloTemplate<'static> {
     HelloTemplate { name: "world" }
+}
+
+async fn stats(user: User) -> Result<&'static str, AppError> {
+	Ok("We're authorized!")
 }
 
 
@@ -70,13 +59,20 @@ where
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> anyhow::Result<()>{
+    // let conn_str = "postgres://postgres:pwd123456@localhost:5432/forecast?sslmode=disable";
+	// let pool = sqlx::PgPool::connect(&conn_str)
+    //     .await
+    //     .context("can't connect to database")?;
+
     let app = Router::new()
-    .route("/", get(hello))
+    .route("/", get(index))
     .route("/weather", get(weather))
     .route("/stats", get(stats));
+    //.with_state(pool);
 
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:3000").await.unwrap();
     axum::serve(listener, app).await.unwrap();
+    Ok(())
 }

@@ -3,9 +3,10 @@ use anyhow::Context;
 use askama_axum::Template;
 use serde::Deserialize;
 use axum::{
-    http::StatusCode,
-    response::{IntoResponse, Response},
+    async_trait, extract::FromRequestParts, http::{request::Parts, StatusCode}, response::{IntoResponse, Response}
 };
+use std::str::from_utf8;
+use base64;
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct GeoResponse {
@@ -17,7 +18,7 @@ pub struct WeatherQuery {
 	pub city: String,
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(sqlx::FromRow, Deserialize, Debug, Clone)]
 pub struct LatLong {
 	pub latitude: f64,
 	pub longitude: f64,
@@ -111,5 +112,48 @@ where
 {
 	fn from(err: E) -> Self {
     	Self(err.into())
+	}
+}
+
+
+pub struct User;
+
+#[async_trait]
+impl<S> FromRequestParts<S> for User
+where
+	S: Send + Sync,
+{
+	type Rejection = axum::http::Response<axum::body::Body>;
+
+	async fn from_request_parts(parts: &mut Parts, _: &S) -> Result<Self, Self::Rejection> {
+		let auth_header = parts
+			.headers
+			.get("Authorization")
+			.and_then(|header| header.to_str().ok());
+
+		if let Some(auth_header) = auth_header {
+			if auth_header.starts_with("Basic ") {
+				let credentials = auth_header.trim_start_matches("Basic ");
+				let decoded = base64::decode(credentials).unwrap_or_default();
+				let credential_str = from_utf8(&decoded).unwrap_or("");
+
+				// Our username and password are hardcoded here.
+				// In a real app, you'd want to read them from the environment.
+				if credential_str == "forecast:forecast" {
+					return Ok(User);
+				}
+			}
+		}
+
+		let reject_response = axum::http::Response::builder()
+			.status(StatusCode::UNAUTHORIZED)
+			.header(
+				"WWW-Authenticate",
+				"Basic realm=\"Please enter your credentials\"",
+			)
+			.body(axum::body::Body::from("Unauthorized"))
+			.unwrap();
+
+		Err(reject_response)
 	}
 }
