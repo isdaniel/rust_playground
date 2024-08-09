@@ -112,8 +112,8 @@ fn main() {
         Err(e) => format!("Error: {}", e),
     };
 
-    println!("Result: {msg}");
 }
+
 
 fn result_func() -> Result<String, std::io::Error> {
     let mut s = String::new();
@@ -125,7 +125,6 @@ fn result_func() -> Result<String, std::io::Error> {
 enum Message {
     Hello {id: i32},
 }
-
 
 pub struct Point {
     x: i32,
