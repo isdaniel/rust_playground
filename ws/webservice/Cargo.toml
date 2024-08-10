@@ -1,0 +1,18 @@
+[package]
+name = "webservice"
+version = "0.1.0"
+edition = "2021"
+default-run = "teacher-service"
+
+
+[dependencies]
+actix-web = "4.8.0"
+actix-rt = "2.10.0"
+serde = { version = "1.0.205", features = ["derive"] }
+chrono = { version = "0.4.38", features = ["serde"] }
+
+[[bin]]
+name = "server1"
+
+[[bin]]
+name = "teacher-service"

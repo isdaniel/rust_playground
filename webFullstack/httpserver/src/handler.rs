@@ -82,7 +82,7 @@ impl Handler for WebServiceHandler{
 
 impl WebServiceHandler{
     fn load_json() -> Vec<OrderStatus>{
-        let default_path = format!("{}/data",env!("CARGO_MANIFEST_DIR"));
+        let default_path = format!("{}/public",env!("CARGO_MANIFEST_DIR"));
         let data_path = env::var("DATA_PATH").unwrap_or(default_path);
         let full_path = format!("{}/{}", data_path, "orders.json");
         let json_contents = fs::read_to_string(full_path).expect("Unable to read file");

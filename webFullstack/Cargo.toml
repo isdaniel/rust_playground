@@ -4,5 +4,5 @@ members = [
     "tcpserver",
     "tcpclient", 
     "httpserver",
-    "http",
+    "http", "ws",
 ]
