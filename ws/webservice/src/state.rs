@@ -1,5 +1,5 @@
 use std::sync::Mutex;
-use crate::models::Course;
+use crate::models::course::Course;
 
 #[derive(Debug)]
 pub struct AppState{

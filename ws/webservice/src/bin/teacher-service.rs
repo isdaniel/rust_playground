@@ -2,15 +2,20 @@ use std::{io, sync::Mutex};
 use actix_web::{web,App,HttpResponse,HttpServer,Responder};
 use routers::*;
 use state::AppState;
+use std::env;
 
-#[path = "../handlers.rs"]
+
+#[path = "../handlers/mod.rs"]
 mod handlers;
 #[path = "../routers.rs"]
 mod routers;
 #[path = "../state.rs"]
 mod state;
-#[path = "../models.rs"]
+#[path = "../models/mod.rs"]
 mod models;
+#[path = "../errors.rs"]
+mod errors;
+
 
 #[actix_rt::main]
 async fn main() -> io::Result<()>{
@@ -21,6 +26,9 @@ async fn main() -> io::Result<()>{
     });
     let app = move || {
         App::new().app_data(shared_data.clone())
+            .app_data(web::JsonConfig::default().error_handler(|err,_req| {
+                errors::MyError::InputInvalidError(err.to_string()).into()
+            }))
             .configure(general_routes)
             .configure(course_routes)
     };
