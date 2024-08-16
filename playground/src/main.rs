@@ -1,134 +1,62 @@
-use std::{clone, fmt::format, fs::File, io::{Error, ErrorKind, Read}, rc::Rc};
-struct User{
-    user_id : i32,
-    posts: Vec<String>
+use std::{cell::RefCell, cmp, rc::Rc};
+use rand::Rng;
+
+type OnReceivedDamage = Box<dyn Fn(u32)>;
+
+#[derive(Default)]
+struct DamageCounter {
+    damage_inflicted: u32,
 }
 
-impl User {
-    fn set_id(&mut self, id: i32){
-        self.user_id = id;
+impl DamageCounter {
+    fn reached_target_damage(&self) -> bool {
+        self.damage_inflicted > 100
+    }
+
+    fn on_damage_received(&mut self, damage: u32) {
+        self.damage_inflicted += damage;
     }
 }
 
-fn move_testing(obj : &mut mytype) -> &mut mytype{
-    obj.a += 1;
-    obj.b += 1;
-    println!("obj: {:?}", obj);
-    obj
+struct Monster{
+    health: u32
 }
 
-#[derive(Debug)]
-#[derive(Clone)]
-struct mytype{
-    a: i32,
-    b: i32
+
+impl Monster {
+    fn take_damage(&mut self, amount: u32, on_damage_received: impl FnOnce(u32)) {
+        let damage_received = cmp::min(self.health, amount);
+        self.health -= damage_received;
+        on_damage_received(damage_received);
+    }
 }
 
-//todo make a linked list
-#[derive(Debug)]
-enum List {
-    Next(i32,Rc<List>),
-    Nil,
+impl Default for Monster {
+    fn default() -> Self {
+        Monster {
+            health: 100
+        }
+    }
 }
-
 
 fn main() {
-    let mut list = Rc::new(List::Nil);
-    for i in 0..10 {
-        list = Rc::new(List::Next(i, list.clone()));
-    }
+    let mut rng = rand::thread_rng();
+    let mut counter = DamageCounter::default();
+    let mut monsters = (0..5).map(|_| Monster::default()).collect::<Vec<_>>();
     
-    while let List::Next(value, next) = list.as_ref() {
-        println!("Value: {}", value);
-        list = Rc::clone(&next);
+    while !counter.reached_target_damage() {
+        let index = rng.gen_range(0..monsters.len());
+        let target = &mut monsters[index];
+
+        let damage = rng.gen_range(0..50);
+        target.take_damage(damage,|dmg| {counter.on_damage_received(dmg)});
+
+        println!("Monster {} received {} damage", index, damage);
     }
 
-    // while let List::Next(value, next) = list {
-    //     println!("Value: {}", value);
-    //     list = Rc::clone(&next);
-    // }
-    // let a = List::Next(1, Rc::clone(&list));
-
-    // println!("List: {:?}", a);
-    println!("=====================");
-
-    let mut a = mytype{a: 1, b: 1};
-    println!("obj: {:?}", move_testing(&mut a));
-    println!("obj: {:?}", move_testing(&mut a));
-
-    let mut user = User{
-        user_id: 0,
-        posts: vec!["Post1".to_string(), "Post2".to_string()]
-    };
-
-    //let user_posts = user.posts;
-    user.user_id = 1;
-    user.set_id(1);
-
-    let mut stack = vec![];
-    stack.push(1);
-    stack.push(2);
-    while let Some(top) = stack.pop(){
-        println!("Top: {}", top);
-    }
-
-    let origin = Point{x: 0, y: 0,z : 0};
-
-    match origin {
-        Point{x,..} => println!("x: {}", x),
-    }
-
-    let number = (2,4,8,6,10);
-    match number {
-        (first, .., last) => println!("First: {}, Last: {}", first, last),
-    }
-
-    let num = Some(4);
-
-    match num {
-        Some(x) if x < 5 => println!("Less than 5"),
-        Some(x) => println!("Greater than 5"),
-        None => ()
-    }
-
-    let msg = Message::Hello{id: 5};
-
-    match msg {
-        Message::Hello { 
-            id : id_variable @ 3..=7,
-        } => {
-            println!("Found an id in range: {}", id_variable);
-        }
-        Message::Hello { id: 10..=12 } => {
-            println!("Found an id in another range");
-        }
-        Message::Hello { id } => {
-            println!("Found some other id: {}", id);
-        }
-    }
-
-    let msg = match result_func(){
-        Ok(s) => s,
-        Err(e) => format!("Error: {}", e),
-    };
-
+    println!("{}",returns_closure()(1));
 }
 
-
-fn result_func() -> Result<String, std::io::Error> {
-    let mut s = String::new();
-    File::open("hello.txt")?.read_to_string(&mut s)?;
-    Ok(s)
+fn returns_closure() -> impl Fn(i32) -> i32 {
+    |x| x + 1
 }
-
-
-enum Message {
-    Hello {id: i32},
-}
-
-pub struct Point {
-    x: i32,
-    y: i32,
-    z: i32
-}
-
