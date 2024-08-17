@@ -19,14 +19,17 @@ struct Worker {
 impl Worker {
     fn new(id: usize, receiver: Arc<Mutex<Receiver<Message>>>) -> Worker {
         let thread = thread::spawn(move || loop {
-            let message = receiver.lock().unwrap().recv().unwrap();
-            match message {
-                Message::NewJob => {
+            let result = Worker::wait_for_message(&receiver, Duration::from_millis(500));
+            match result {
+                Some(Message::NewJob) => {
                     println!("Worker {} got a job; executing.", id);
-                    let _ = Duration::from_secs(1);
                 },
-                Message::Terminate => {
+                Some(Message::Terminate) => {
                     println!("Worker {} was told to terminate.", id);
+                    break;
+                }
+                None => {
+                    println!("unexpected error, Worker {} could not receive message.", id);
                     break;
                 }
             }
@@ -35,6 +38,20 @@ impl Worker {
         Worker {
             id,
             thread: Some(thread),
+        }
+    }
+
+    fn wait_for_message(receiver: &Arc<Mutex<Receiver<Message>>>,timeout: Duration) -> Option<Message>{
+        let message = receiver.lock().unwrap();
+        match message.recv_timeout(timeout) {
+            Ok(message) => Some(message),
+            Err(RecvTimeoutError::Timeout) => {
+                Some(Message::NewJob)
+            },
+            Err(RecvTimeoutError::Disconnected) => {
+                println!("Channel disconnected.");
+                None
+            }
         }
     }
 }
@@ -62,10 +79,9 @@ fn main() {
                 },
             }
         }
-        println!("Got it! Exiting...");
-        main_sender.send(()).expect("main_sender could not send signal on channel.");
+        main_sender.send("Got it! Exiting...").expect("main_sender could not send signal on channel.");
     }).expect("Error setting Ctrl-C handler");
 
     println!("Waiting for Ctrl-C...");
-    main_receiver.recv().expect("main_receiver could not receive signal on channel.");
+    println!("{}", main_receiver.recv().expect("main_receiver could not receive signal on channel."));
 }
