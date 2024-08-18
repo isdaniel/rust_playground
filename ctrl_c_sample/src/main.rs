@@ -5,7 +5,6 @@ use std::thread::{self};
 use std::time::Duration;
 use std::vec;
 
-
 enum Message {
     NewJob,
     Terminate

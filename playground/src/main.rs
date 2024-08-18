@@ -1,5 +1,7 @@
-use std::{cell::RefCell, cmp, rc::Rc};
+use std::{cell::RefCell, cmp, rc::Rc, thread};
+use std::process;
 use rand::Rng;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 type OnReceivedDamage = Box<dyn Fn(u32)>;
 
@@ -38,6 +40,8 @@ impl Default for Monster {
         }
     }
 }
+
+static INIT: AtomicBool = AtomicBool::new(false);
 
 fn main() {
     let mut rng = rand::thread_rng();
