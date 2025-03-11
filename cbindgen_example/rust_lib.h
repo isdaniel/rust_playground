@@ -6,4 +6,6 @@
 
 bool string_to_uint32(const char *str, uint32_t *number);
 
+bool string_to_int32(const char *str, int32_t *number);
+
 int32_t add(int32_t a, int32_t b);

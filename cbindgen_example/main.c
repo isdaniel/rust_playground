@@ -14,6 +14,13 @@ int main() {
     } else {
         printf("string_to_uint32 failed\n");
     }
+    
+    int32_t num_intPtr;
+    if (string_to_int32("-123", &num_intPtr)) {
+        printf("string_to_int32 success\n num_intPtr = %d\n", num_intPtr);
+    } else {
+        printf("string_to_int32 failed\n");
+    }
 
     getchar();
     return 0;
