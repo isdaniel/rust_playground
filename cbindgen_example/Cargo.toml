@@ -1,0 +1,14 @@
+[lib]
+crate-type = ["staticlib"]
+
+[package]
+name = "cbindgen-example"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.97"
+libc = "0.2.171"
+
+[build-dependencies]
+cbindgen = "0.28.0"

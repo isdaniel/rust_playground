@@ -1,6 +1,6 @@
-extern "C" {
-    fn c_hello(name: *const i8);
-    fn c_add(a: i32, b: i32) -> i32;
+unsafe extern "C" {
+    unsafe fn c_hello(name: *const i8);
+    unsafe fn c_add(a: i32, b: i32) -> i32;
 }
 
 fn main() {
