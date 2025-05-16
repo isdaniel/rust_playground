@@ -8,13 +8,20 @@ pub struct Config {
 }
 
 impl Config{
-    pub fn build(args: Vec<String>) -> Result<Config, &'static str> {
-        if args.len() < 3 {
-            return Err("Not enough arguments");
-        }
+    pub fn build(mut args: impl Iterator<Item = String>) -> Result<Config, &'static str> {
 
-        let query = args[1].clone();
-        let file_path = args[2].clone();
+        args.next();
+
+        let query = match args.next() {
+            Some(arg) => arg,
+            None => return Err("Didn't get a query string")
+        };
+
+        let file_path = match args.next() {
+            Some(arg) => arg,
+            None => return Err("Didn't get a query string")
+        };
+
         let ignore_case = std::env::var("IGNORE_CASE").is_ok();
         Ok(Config { query, file_path,ignore_case })
     }
