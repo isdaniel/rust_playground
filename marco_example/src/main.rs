@@ -1,36 +1,5 @@
+use marco_example::*;
 use std::collections::HashMap;
-
-macro_rules! ops {
-    ($v1:literal plus $v2:literal) => {
-        $v1 + $v2
-    };
-    ($v1:literal minus $v2:literal) => {
-        $v1 - $v2
-    };
-    ($v1:literal mutiply $v2:literal) => {
-        $v1 * $v2
-    };
-    ($v1:literal divide $v2:literal) => {
-        $v1 / $v2
-    };
-}
-
-macro_rules! if_any {
-    ($($condition:expr),+ ;$block:block) => {
-        if $($condition) || +
-            $block
-    };
-}
-
-macro_rules! hashmap {
-    ($($key:literal => $value:expr,)*) => {
-        {
-            let mut map = HashMap::new();
-            $(map.insert($key,$value);)*
-            map
-        }
-    };
-}
 
 fn main() {
     println!("{}, {}", ops!(100 mutiply 10), ops!(100 plus 10));
@@ -46,4 +15,8 @@ fn main() {
     );
 
     println!("{my_hashmap:#?}");
+
+    let my_number = number!(nine three seven two zero).parse::<u32>().unwrap();
+    let my_other_number = number!(one two four six eight zero).parse::<u32>().unwrap();
+    println!("{}", my_number + my_other_number); // = 218400
 }
