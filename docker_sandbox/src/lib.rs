@@ -81,17 +81,24 @@ pub fn run_sandbox(config: SandboxConfig) -> Result<(), String> {
             mount(Some("proc"), proc_path.as_str(), Some("proc"), MsFlags::empty(), None::<&str>)
                 .map_err(|e| format!("Mount /proc failed: {}", e))?;
 
-            chroot(merged.as_str()).map_err(|e| format!("chroot failed: {}", e))?;
-            chdir("/").map_err(|e| format!("chdir failed: {}", e))?;
+            chroot(merged.as_str())
+                .map_err(|e| format!("chroot failed: {}", e))?;
+            chdir("/")
+                .map_err(|e| format!("chdir failed: {}", e))?;
 
-            let shell = CString::new(config.shell_path.clone()).unwrap();
-            execv(&shell, &[CString::new("sh").unwrap()])
+            let shell = CString::new(config.shell_path)
+                                .map_err(|e| format!("Invalid shell path CString: {}", e))?;
+            let arg0 = CString::new("sh")
+                .map_err(|e| format!("Invalid arg0 CString: {}", e))?;
+            execv(&shell, &[arg0])
                 .map_err(|e| format!("execv failed: {}", e))?;
+            println!("ForkResult::Child");
             Ok(())
         }
         Ok(ForkResult::Parent { child, .. }) => {
             let _ = nix::sys::wait::waitpid(child, None);
             let _ = umount2(merged.as_str(), MntFlags::MNT_DETACH);
+            println!("ForkResult::Parent, child: {}, merged path {}",child, merged);
             Ok(())
         }
         Err(e) => Err(format!("fork failed: {}", e)),
