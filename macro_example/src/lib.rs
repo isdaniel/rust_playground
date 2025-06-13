@@ -76,6 +76,11 @@ macro_rules! number {
     };
 }
 
+pub trait FunctionCallRecorder {
+    fn record_call(fn_name: &str, args: &str);
+    fn record_return(fn_name: &str, result: &str);
+}
+
 /*
 fn add(val1: i32, val2: i32) -> i32 {
     val1 + val2
@@ -86,11 +91,20 @@ fn add_nores(val1: i32, val2: i32)  {
 }
 */
 #[macro_export]
-macro_rules! function_call_with_println {
+macro_rules! function_call_with_aop {
     ($fn:ident ( $($args:expr),* )) => {{
         println!("Calling function : {}  with args: {:?}",stringify!($fn),($($args),*));
         let result = $fn($($args),*);
         println!("function name:{} returned: {:?}",stringify!($fn), result);
+        result
+    }};
+
+    ($recorder:ty, $fn:ident ( $($arg:expr),* )) => {{
+        let args_str = format!("{:?}", ($($arg,)*));
+        <$recorder>::record_call(stringify!($fn), &args_str);
+        let result = $fn($($arg),*);
+        let result_str = format!("{:?}", result);
+        <$recorder>::record_return(stringify!($fn), &result_str);
         result
     }};
 }
@@ -98,6 +112,7 @@ macro_rules! function_call_with_println {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
 
     #[test]
     fn test_ops_macro() {
@@ -144,6 +159,39 @@ mod tests {
         let s2 = number!(one two four six eight zero);
         let n2: u32 = s2.parse().unwrap();
         assert_eq!(n2, 124680);
+    }
+
+    #[test]
+    fn test_function_call_with_aop_macro() {
+        LOGS.lock().unwrap().clear();
+
+        let result = function_call_with_aop!(TestRecorder, add(5, 3));
+        assert_eq!(result, 8);
+
+        let logs = LOGS.lock().unwrap().clone();
+        assert_eq!(logs.len(), 2);
+        assert_eq!(logs[0], "CALL: add (5, 3)");
+        assert_eq!(logs[1], "RETURN: add 8");
+    }
+
+    fn add(a: i32, b: i32) -> i32 {
+        a + b
+    }
+
+    struct TestRecorder;
+
+    lazy_static::lazy_static! {
+        static ref LOGS: Mutex<Vec<String>> = Mutex::new(vec![]);
+    }
+
+    impl FunctionCallRecorder for TestRecorder {
+        fn record_call(fn_name: &str, args: &str) {
+            LOGS.lock().unwrap().push(format!("CALL: {} {}", fn_name, args));
+        }
+
+        fn record_return(fn_name: &str, result: &str) {
+            LOGS.lock().unwrap().push(format!("RETURN: {} {}", fn_name, result));
+        }
     }
 
 }
