@@ -20,7 +20,17 @@ impl Future for Delay {
             println!("Times up");
             Poll::Ready("done")
         } else {
-            cx.waker().wake_by_ref();
+            let waker = cx.waker().clone();
+            let when = self.when;
+            thread::spawn(move || {
+                let now = Instant::now();
+                if now < when {
+                    thread::sleep(when - now);
+                }
+
+                waker.wake();
+            });
+
             Poll::Pending
         }
     }
@@ -101,7 +111,7 @@ struct Task {
 
 impl Task {
     fn schedule(self: &Arc<Self>) {
-        self.executor.send(self.clone());
+        let _ = self.executor.send(self.clone());
     }
 
     fn poll(self: Arc<Self>) {
@@ -135,7 +145,7 @@ impl Task {
 }
 
 fn main() {
-    let mini_tokio = MiniTokio::new();
+    let mini_tokio: MiniTokio = MiniTokio::new();
 
     mini_tokio.spawn(async {
         let when = Instant::now() + Duration::from_millis(10);
@@ -143,8 +153,8 @@ fn main() {
 
         let out = future.await;
         assert_eq!(out, "done");
-    });
 
+    });
 
     mini_tokio.run();
 }
