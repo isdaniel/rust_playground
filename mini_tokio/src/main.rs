@@ -5,7 +5,6 @@ use std::task::{Context, Poll};
 use std::thread;
 use std::time::{Duration, Instant};
 use futures::task::{ self, ArcWake};
-use futures::future::poll_fn;
 
 struct Delay {
     when: Instant
@@ -21,17 +20,7 @@ impl Future for Delay {
             println!("Times up");
             Poll::Ready("done")
         } else {
-            let waker = cx.waker().clone();
-            let when = self.when;
-            thread::spawn(move || {
-                let now = Instant::now();
-                if now < when {
-                    thread::sleep(when - now);
-                }
-
-                waker.wake();
-            });
-
+            cx.waker().wake_by_ref();
             Poll::Pending
         }
     }
@@ -45,6 +34,32 @@ struct MiniTokio {
 struct TaskFuture {
     future: Pin<Box<dyn Future<Output = ()> + Send>>,
     poll: Poll<()>,
+}
+
+impl MiniTokio {
+    fn run(&self) {
+        while let Ok(task) = self.scheduled.recv() {
+            task.poll();
+        }
+    }
+
+    /// Initialize a new mini-tokio instance.
+    fn new() -> MiniTokio {
+        let (sender, scheduled) = mpsc::channel();
+
+        MiniTokio { scheduled, sender }
+    }
+
+    /// Spawn a future onto the mini-tokio instance.
+    ///
+    /// The given future is wrapped with the `Task` harness and pushed into the
+    /// `scheduled` queue. The future will be executed when `run` is called.
+    fn spawn<F>(&self, future: F)
+    where
+        F: Future<Output = ()> + Send + 'static,
+    {
+        Task::spawn(future, &self.sender);
+    }
 }
 
 impl ArcWake for Task {
@@ -97,7 +112,6 @@ impl Task {
 
         // No other thread ever tries to lock the task_future
         let mut task_future = self.task_future.try_lock().unwrap();
-
         // Poll the inner future
         task_future.poll(&mut cx);
     }
@@ -120,34 +134,6 @@ impl Task {
     }
 }
 
-
-
-impl MiniTokio {
-    fn run(&self) {
-        while let Ok(task) = self.scheduled.recv() {
-            task.poll();
-        }
-    }
-
-    /// Initialize a new mini-tokio instance.
-    fn new() -> MiniTokio {
-        let (sender, scheduled) = mpsc::channel();
-
-        MiniTokio { scheduled, sender }
-    }
-
-    /// Spawn a future onto the mini-tokio instance.
-    ///
-    /// The given future is wrapped with the `Task` harness and pushed into the
-    /// `scheduled` queue. The future will be executed when `run` is called.
-    fn spawn<F>(&self, future: F)
-    where
-        F: Future<Output = ()> + Send + 'static,
-    {
-        Task::spawn(future, &self.sender);
-    }
-}
-
 fn main() {
     let mini_tokio = MiniTokio::new();
 
@@ -158,6 +144,7 @@ fn main() {
         let out = future.await;
         assert_eq!(out, "done");
     });
+
 
     mini_tokio.run();
 }
