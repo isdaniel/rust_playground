@@ -1,7 +1,6 @@
 use std::{mem, os::fd::RawFd};
 use libc::*;
 use crate::syscall;
-
 pub struct EpollContext {
     pub read_fd : i32,
     pub write_fd : i32,
