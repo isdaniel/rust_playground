@@ -1,4 +1,5 @@
 use std::{collections::HashMap, io::{self, Read, Write}, net::{TcpListener, TcpStream}, os::fd::AsRawFd, sync::{mpsc::channel, Mutex}};
+use log::{debug, error, info, warn};
 use reactor_rs_example::{executor::Executor, reactor::Reactor , utility::EventId};
 use lazy_static::lazy_static;
 use rand::prelude::*;
@@ -69,38 +70,42 @@ impl RequestContext {
                     .strip_prefix("content-length: ")
                 {
                     self.content_length = len.parse::<usize>().expect("content-length is valid");
-                    println!("set content length: {} bytes", self.content_length);
+                    debug!("set content length: {} bytes", self.content_length);
                 }
             }
         }
     }
 
     fn write_cb(&mut self, event_id: EventId) -> io::Result<()> {
-        println!("in write event of stream with event id: {}", event_id);
-        match self.stream.write(HTTP_RESP) {
-            Ok(_) => println!("answered from request {}", event_id),
-            Err(e) => eprintln!("could not answer to request {}, {}", event_id, e),
-        };
-        self.stream
-            .shutdown(std::net::Shutdown::Both)
-            .expect("can close a stream");
+        debug!("in write event of stream with event id: {}", event_id);
+        self.stream.write_all(HTTP_RESP)?;
+       
+        if let Err(e) = self.stream.shutdown(std::net::Shutdown::Both) {
+            if e.kind() != io::ErrorKind::NotConnected {
+                warn!("warning: can't shutdown stream: {}", e);
+            }
+        }
 
         REACTOR
             .lock()
-            .expect("can get reactor lock")
+            .expect("can't get reactor lock")
             .close(self.stream.as_raw_fd())
-            .expect("can close fd and clean up reactor");
-
+            .expect("can't close fd and clean up reactor");
+        info!("answered from request {}", event_id);
         Ok(())
     }
 }
 
-const HTTP_RESP: &[u8] = b"HTTP/1.1 200 OK
-content-type: text/html
-content-length: 11
-
+const HTTP_RESP: &[u8] =b"HTTP/1.1 200 OK\r\n\
+Content-Type: text/plain\r\n\
+Content-Length: 11\r\n\
+Connection: close\r\n\
+\r\n\
 Hello Rust!";
+
 fn main() -> io::Result<()> {
+    env_logger::init(); 
+
     let listener_event_id = 100;
     let listener = TcpListener::bind("127.0.0.1:8000")?;
     listener.set_nonblocking(true)?;
@@ -115,7 +120,7 @@ fn main() -> io::Result<()> {
 
     REACTOR
         .lock()
-        .expect("can get reactor lock")
+        .expect("can't get reactor lock")
         .read_interest(listener_fd, listener_event_id)?;
 
     listener_cb(listener, listener_event_id);
@@ -123,7 +128,7 @@ fn main() -> io::Result<()> {
     while let Ok(event_id) = receiver.recv() {
         EXECUTOR
             .lock()
-            .expect("can get an executor lock")
+            .expect("can't get an executor lock")
             .run(event_id);
     }
 
@@ -139,7 +144,7 @@ fn listener_cb(listener: TcpListener, event_id: EventId) {
             Ok((stream, addr)) => {
                 let event_id: EventId = random();
                 stream.set_nonblocking(true).expect("nonblocking works");
-                println!(
+                debug!(
                     "new client: {}, event_id: {}, raw fd: {}",
                     addr,
                     event_id,
@@ -156,7 +161,7 @@ fn listener_cb(listener: TcpListener, event_id: EventId) {
                     .insert(event_id, RequestContext::new(stream));
                 read_cb(exec, event_id);
             }
-            Err(e) => eprintln!("couldn't accept: {}", e),
+            Err(e) => error!("couldn't accept: {}", e),
         };
         REACTOR
             .lock()
@@ -191,7 +196,7 @@ fn write_cb(exec: &mut Executor, event_id: EventId) {
         }
         CONTEXTS
             .lock()
-            .expect("can lock request contexts")
+            .expect("can't lock request contexts")
             .remove(&event_id);
     });
 }

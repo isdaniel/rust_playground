@@ -34,10 +34,8 @@ impl Executor {
         if let Some(mut fun) = self.event_map.remove(&event_id) {
             fun(self);
             self.event_map.insert(event_id, fun);
-        } else {
-            if let Some(fun) = self.event_map_once.remove(&event_id) {
-                fun(self);
-            }
+        } else if let Some(fun) = self.event_map_once.remove(&event_id) {
+            fun(self);
         }
     }
 }

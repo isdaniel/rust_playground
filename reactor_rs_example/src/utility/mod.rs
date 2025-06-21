@@ -1,6 +1,3 @@
-const READ_FLAGS: i32 = libc::EPOLLONESHOT | libc::EPOLLIN;
-const WRITE_FLAGS: i32 = libc::EPOLLONESHOT | libc::EPOLLOUT;
-
 pub type EventId = usize;
 
 #[macro_export]
