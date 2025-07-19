@@ -1,48 +1,3 @@
-// Additional utility functions and test helpers
-use redis::{AsyncCommands, Commands, RedisResult};
-use std::time::Instant;
-
-pub struct RedisTestHelper;
-
-impl RedisTestHelper {
-    /// Clean up test keys from Redis
-    pub fn cleanup_sync(conn: &mut redis::Connection, pattern: &str) -> RedisResult<()> {
-        let keys: Vec<String> = redis::cmd("KEYS").arg(pattern).query(conn)?;
-        if !keys.is_empty() {
-            let _: () = conn.del(&keys)?;
-        }
-        Ok(())
-    }
-
-    /// Clean up test keys from Redis (async version)
-    pub async fn cleanup_async(
-        conn: &mut redis::aio::ConnectionManager,
-        pattern: &str,
-    ) -> RedisResult<()> {
-        let keys: Vec<String> = redis::cmd("KEYS").arg(pattern).query_async(conn).await?;
-        if !keys.is_empty() {
-            let _: () = conn.del(&keys).await?;
-        }
-        Ok(())
-    }
-
-    /// Get Redis server info
-    pub fn get_server_info(conn: &mut redis::Connection) -> RedisResult<String> {
-        redis::cmd("INFO").arg("server").query(conn)
-    }
-
-    /// Measure operation latency
-    pub async fn measure_latency<F, T>(operation: F) -> (T, std::time::Duration)
-    where
-        F: std::future::Future<Output = T>,
-    {
-        let start = Instant::now();
-        let result = operation.await;
-        let duration = start.elapsed();
-        (result, duration)
-    }
-}
-
 /// Test data structures for different scenarios
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
 pub struct UserProfile {
@@ -80,20 +35,6 @@ pub struct CacheEntry {
     pub value: String,
     pub ttl: Option<u64>,
     pub created_at: u64,
-}
-
-impl CacheEntry {
-    pub fn new(key: String, value: String, ttl: Option<u64>) -> Self {
-        Self {
-            key,
-            value,
-            ttl,
-            created_at: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
-        }
-    }
 }
 
 /// Stress test functions
