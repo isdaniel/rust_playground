@@ -1,0 +1,25 @@
+# docker-compose.yml for easy Redis setup
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: redis_benchmark
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+  redis-cli:
+    image: redis:7-alpine
+    container_name: redis_cli
+    depends_on:
+      - redis
+    command: redis-cli -h redis
+    profiles:
+      - cli
+
+volumes:
+  redis_data:

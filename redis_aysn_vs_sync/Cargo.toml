@@ -1,0 +1,21 @@
+[package]
+name = "redis_aysn_vs_sync"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+redis = { version = "0.24", features = ["tokio-comp", "connection-manager"] }
+tokio = { version = "1.0", features = ["full"] }
+rayon = "1.8"
+crossbeam = "0.8"
+uuid = { version = "1.0", features = ["v4"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+clap = { version = "4.0", features = ["derive"] }
+anyhow = "1.0"
+futures = "0.3"
+rand = "0.8"
+
+[[example]]
+name = "concepts"
+path = "examples/concepts.rs"
