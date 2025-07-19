@@ -1,44 +1,18 @@
-use epoll_rs_example::*;
-use libc::epoll_event;
-use std::io::{self};
-use std::{mem};
-
-
+use epoll_rs_example::{example_epoll::*, tcp_epoll::listening_tcp};
+use std::{io::{self}, net::TcpListener};
+use std::os::unix::io::{AsRawFd, RawFd};
+use std::io::prelude::*;
 
 fn main() -> io::Result<()> {
-    // Create a pipe
-    let mut fds = [0; 2];
 
-    syscall!(pipe(fds.as_mut_ptr())).expect("pipe failed");
+    // let fd_context = epoll_create();
+    // // Write some data into pipe to trigger the event
+    // write_message(fd_context.write_fd,b"Hello World!");
 
-    let read_fd = fds[0];
-    let write_fd = fds[1];
+    // // Wait for events
+    // epoll_wait(&fd_context);
+    // close_fd(&fd_context);
 
-    set_nonblocking(read_fd);
-
-    let epfd = epoll_create(read_fd);
-    
-        // Write some data into pipe to trigger the event
-    write_message(write_fd,b"Hello World!");
-
-    // Wait for events
-    let mut events: [epoll_event; 10] = unsafe { mem::zeroed() };
-    let nfds = syscall!(epoll_wait(epfd, events.as_mut_ptr(), events.len() as i32, 5000)).expect("epoll_wait failed");
-    println!("epoll_wait reported {} events", nfds);
-
-    for i in 0..nfds as usize {
-		let ev = events[i];
-		if ev.u64 == read_fd as u64 {
-			let mut buf = [0u8; 64];
-			let n = syscall!(read(read_fd, buf.as_mut_ptr() as *mut _, buf.len())).unwrap();
-			if n > 0 {
-				let s = std::str::from_utf8(&buf[..n as usize]).unwrap();
-				println!("Received: {}", s);
-			}
-		}
-	}
-
-	syscall!(close(read_fd),close(write_fd),close(epfd));
-
-	Ok(())
+    listening_tcp("127.0.0.1:8080")?;
+    Ok(())
 }
