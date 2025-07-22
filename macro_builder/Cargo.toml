@@ -1,0 +1,9 @@
+[package]
+name = "macro_builder"
+version = "0.1.0"
+edition = "2021"
+
+
+
+[dependencies]
+derive_builder = { path = "./derive_builder" }

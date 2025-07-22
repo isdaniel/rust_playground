@@ -1,4 +1,4 @@
-use std::{pin::Pin, sync::{mpsc, Arc, Mutex}, task::{Context, Poll}, thread, time::Instant};
+use std::{error::Error, pin::Pin, sync::{mpsc, Arc, Mutex}, task::{Context, Poll}, thread, time::Instant};
 use futures::task::{ self, ArcWake};
 
 pub struct Delay {
@@ -90,6 +90,7 @@ impl Task {
         let mut task_future = self.task_future.try_lock().unwrap();
         // Poll the inner future
         task_future.poll(&mut cx);
+        // sender.send(Err(error_msg))
     }
 
     // Spawns a new task with the given future.
