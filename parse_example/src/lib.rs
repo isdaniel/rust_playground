@@ -1,8 +1,9 @@
-use std::fmt;
+use std::{collections::HashMap, fmt};
 
 #[derive(Debug, PartialEq)]
 pub enum Token{
     Number(i32),
+    Var(char),
     Operator(char),
     Eof
 }
@@ -10,6 +11,7 @@ pub enum Token{
 #[derive(Debug)]
 pub enum Expression {
     Number(i32),
+    Var(char),
     Operator(char,Vec<Expression>)
 }
 
@@ -36,6 +38,9 @@ impl Lexer {
                 continue; // Skip whitespace
             }
             match c {
+                'a'..='z' | 'A'..='Z' => {
+                    tokens.push(Token::Var(c));
+                },
                 '0'..='9' => {
                     let mut num = c.to_digit(10).unwrap() as i32;
                     while let Some(next) = chars.peek() {
@@ -58,12 +63,19 @@ impl Lexer {
     }
 
     fn next(&mut self) -> &Token {
+        if self.index >= self.tokens.len() {
+            panic!("No more tokens available");
+        }
+
         let token = &self.tokens[self.index];
         self.index += 1;
         token
     }
 
     fn peek(&self) -> &Token {
+        if self.index >= self.tokens.len() {
+            panic!("No more tokens available");
+        }
         &self.tokens[self.index]
     }
 }
@@ -72,6 +84,7 @@ impl fmt::Display for Expression {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Expression::Number(n) => write!(f, "{n}"),
+            Expression::Var(name) => write!(f, "{name}"),
             Expression::Operator(op, exprs) => {
                 write!(f, "({op}")?;
                 for s in exprs {
@@ -83,7 +96,6 @@ impl fmt::Display for Expression {
     }
 }
 
-
 ///precedence
 /// operator
 /// + -  => 1
@@ -94,6 +106,7 @@ impl fmt::Display for Expression {
 /// It returns a tuple where the first element is the precedence level and the second element is the associativity level.
 fn precedence(op: char) -> (f32,f32) {
     match op {
+        '=' => (0.0, 0.1),
         '+' | '-' => (1.0,1.1),
         '*' | '/' => (2.0,2.1),
         '^' => (3.0,3.1),
@@ -108,15 +121,18 @@ impl Expression {
     }
     //1 + 2 * 3
     fn parse_expression(lexer: &mut Lexer, min_op : f32) -> Self {
-        //println!("current token : {:?}", lexer.peek());
-
         let mut left_expr = match lexer.next() {
             Token::Number(num) => Expression::Number(*num),
+            Token::Var(name) => Expression::Var(*name),
             Token::Operator('(') => {
                 let left = Self::parse_expression(lexer, 0.0);
                 assert_eq!(lexer.next(), &Token::Operator(')'));
                 left
             },
+            Token::Operator('-') => {
+                let left = Self::parse_expression(lexer, 0.0);
+                Expression::Operator('-', vec![Expression::Number(0), left])
+            }
             t => panic!("left_expr unexpected token: {:?}", t),
         };
         loop {
@@ -137,12 +153,15 @@ impl Expression {
         left_expr
     }
 
-    pub fn eval(&self) -> i32 {
+    pub fn eval(&self, variables: &HashMap<char, i32>) -> i32 {
         match self {
             Expression::Number(n) => *n,
+            Expression::Var(name) => {
+                *variables.get(name).expect("Variable not found")
+            },
             Expression::Operator(op, exprs) => {
-                let left_result = exprs[0].eval();
-                let right_result = exprs[1].eval();
+                let left_result = exprs[0].eval(variables);
+                let right_result = exprs[1].eval(variables);
                 let result = match op {
                     '+' => left_result + right_result,
                     '-' => left_result - right_result,
@@ -158,6 +177,27 @@ impl Expression {
                 };
                 result
             }
+        }
+    }
+
+    /// Convenience method to evaluate expressions without variables
+    pub fn eval_no_vars(&self) -> i32 {
+        let empty_vars = HashMap::new();
+        self.eval(&empty_vars)
+    }
+
+    /// a = 1
+    /// b = a + 1
+    pub fn is_asign(&self) -> Option<(char, &Expression)> {
+        match self {
+            Expression::Operator('=', exprs) if exprs.len() == 2 => {
+                if let Expression::Var(var_name) = &exprs[0] {
+                    Some((*var_name, &exprs[1]))
+                } else {
+                    None
+                }
+            },
+            _ => None,
         }
     }
 }
@@ -338,91 +378,91 @@ mod tests {
     #[test]
     fn evaluate_single_number() {
         let expr = Expression::from_str("42");
-        assert_eq!(expr.eval(), 42);
+        assert_eq!(expr.eval_no_vars(), 42);
     }
 
     #[test]
     fn evaluate_simple_addition() {
         let expr = Expression::from_str("2 + 3");
-        assert_eq!(expr.eval(), 5);
+        assert_eq!(expr.eval_no_vars(), 5);
     }
 
     #[test]
     fn evaluate_simple_subtraction() {
         let expr = Expression::from_str("10 - 4");
-        assert_eq!(expr.eval(), 6);
+        assert_eq!(expr.eval_no_vars(), 6);
     }
 
     #[test]
     fn evaluate_simple_multiplication() {
         let expr = Expression::from_str("6 * 7");
-        assert_eq!(expr.eval(), 42);
+        assert_eq!(expr.eval_no_vars(), 42);
     }
 
     #[test]
     fn evaluate_simple_division() {
         let expr = Expression::from_str("15 / 3");
-        assert_eq!(expr.eval(), 5);
+        assert_eq!(expr.eval_no_vars(), 5);
     }
 
     #[test]
     fn evaluate_simple_exponentiation() {
         let expr = Expression::from_str("2 ^ 3");
-        assert_eq!(expr.eval(), 8);
+        assert_eq!(expr.eval_no_vars(), 8);
     }
 
     #[test]
     fn evaluate_precedence_multiplication_over_addition() {
         let expr = Expression::from_str("2 + 3 * 4");
-        assert_eq!(expr.eval(), 14); // 2 + (3 * 4) = 2 + 12 = 14
+        assert_eq!(expr.eval_no_vars(), 14); // 2 + (3 * 4) = 2 + 12 = 14
     }
 
     #[test]
     fn evaluate_precedence_exponentiation_over_multiplication() {
         let expr = Expression::from_str("2 * 3 ^ 2");
-        assert_eq!(expr.eval(), 18); // 2 * (3 ^ 2) = 2 * 9 = 18
+        assert_eq!(expr.eval_no_vars(), 18); // 2 * (3 ^ 2) = 2 * 9 = 18
     }
 
     #[test]
     fn evaluate_left_associative_subtraction() {
         let expr = Expression::from_str("10 - 3 - 2");
-        assert_eq!(expr.eval(), 5); // (10 - 3) - 2 = 7 - 2 = 5
+        assert_eq!(expr.eval_no_vars(), 5); // (10 - 3) - 2 = 7 - 2 = 5
     }
 
     #[test]
     fn evaluate_left_associative_division() {
         let expr = Expression::from_str("20 / 4 / 2");
-        assert_eq!(expr.eval(), 2); // (20 / 4) / 2 = 5 / 2 = 2 (integer division)
+        assert_eq!(expr.eval_no_vars(), 2); // (20 / 4) / 2 = 5 / 2 = 2 (integer division)
     }
 
     #[test]
     fn evaluate_parentheses_override_precedence() {
         let expr = Expression::from_str("(2 + 3) * 4");
-        assert_eq!(expr.eval(), 20); // (2 + 3) * 4 = 5 * 4 = 20
+        assert_eq!(expr.eval_no_vars(), 20); // (2 + 3) * 4 = 5 * 4 = 20
     }
 
     #[test]
     fn evaluate_complex_expression() {
         let expr = Expression::from_str("2 + 3 * 4 - 6 / 2");
-        assert_eq!(expr.eval(), 11); // 2 + (3 * 4) - (6 / 2) = 2 + 12 - 3 = 11
+        assert_eq!(expr.eval_no_vars(), 11); // 2 + (3 * 4) - (6 / 2) = 2 + 12 - 3 = 11
     }
 
     #[test]
     fn evaluate_nested_parentheses() {
         let expr = Expression::from_str("((2 + 3) * (4 + 1))");
-        assert_eq!(expr.eval(), 25); // (5 * 5) = 25
+        assert_eq!(expr.eval_no_vars(), 25); // (5 * 5) = 25
     }
 
     #[test]
     fn evaluate_zero_exponent() {
         let expr = Expression::from_str("5 ^ 0");
-        assert_eq!(expr.eval(), 1); // Any number to the power of 0 is 1
+        assert_eq!(expr.eval_no_vars(), 1); // Any number to the power of 0 is 1
     }
 
     #[test]
     fn evaluate_one_exponent() {
         let expr = Expression::from_str("42 ^ 1");
-        assert_eq!(expr.eval(), 42); // Any number to the power of 1 is itself
+        assert_eq!(expr.eval_no_vars(), 42); // Any number to the power of 1 is itself
     }
 
     // ===== ERROR HANDLING TESTS =====
@@ -431,7 +471,7 @@ mod tests {
     #[should_panic(expected = "Negative exponent not supported")]
     fn evaluate_negative_exponent_panics() {
         let expr = Expression::from_str("2 ^ (0 - 1)");
-        expr.eval(); // Should panic on negative exponent
+        expr.eval_no_vars(); // Should panic on negative exponent
     }
 
     #[test]
@@ -451,30 +491,147 @@ mod tests {
     #[test]
     fn parse_expression_with_trailing_whitespace() {
         let expr = Expression::from_str("1 + 2   ");
-        assert_eq!(expr.eval(), 3);
+        assert_eq!(expr.eval_no_vars(), 3);
     }
 
     #[test]
     fn parse_expression_with_leading_whitespace() {
         let expr = Expression::from_str("   1 + 2");
-        assert_eq!(expr.eval(), 3);
+        assert_eq!(expr.eval_no_vars(), 3);
     }
 
     #[test]
     fn evaluate_large_numbers() {
         let expr = Expression::from_str("999 + 1");
-        assert_eq!(expr.eval(), 1000);
+        assert_eq!(expr.eval_no_vars(), 1000);
     }
 
     #[test]
     fn evaluate_division_with_integer_result() {
         let expr = Expression::from_str("9 / 3");
-        assert_eq!(expr.eval(), 3);
+        assert_eq!(expr.eval_no_vars(), 3);
     }
 
     #[test]
     fn evaluate_division_with_truncation() {
         let expr = Expression::from_str("7 / 2");
-        assert_eq!(expr.eval(), 3); // Integer division truncates
+        assert_eq!(expr.eval_no_vars(), 3); // Integer division truncates
+    }
+
+    // ===== VARIABLE TESTS =====
+
+    #[test]
+    fn evaluate_single_variable() {
+        let expr = Expression::from_str("x");
+        let mut vars = HashMap::new();
+        vars.insert('x', 42);
+        assert_eq!(expr.eval(&vars), 42);
+    }
+
+    #[test]
+    fn evaluate_variable_in_expression() {
+        let expr = Expression::from_str("x + 10");
+        let mut vars = HashMap::new();
+        vars.insert('x', 5);
+        assert_eq!(expr.eval(&vars), 15);
+    }
+
+    #[test]
+    fn evaluate_multiple_variables() {
+        let expr = Expression::from_str("x * y + z");
+        let mut vars = HashMap::new();
+        vars.insert('x', 3);
+        vars.insert('y', 4);
+        vars.insert('z', 2);
+        assert_eq!(expr.eval(&vars), 14); // 3 * 4 + 2 = 14
+    }
+
+    #[test]
+    fn evaluate_assignment_expression() {
+        let expr = Expression::from_str("x = 5 + 3");
+        if let Some((var_name, value_expr)) = expr.is_asign() {
+            assert_eq!(var_name, 'x');
+            assert_eq!(value_expr.eval_no_vars(), 8);
+        } else {
+            panic!("Expected assignment expression");
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "Variable not found")]
+    fn evaluate_undefined_variable_panics() {
+        let expr = Expression::from_str("x + 1");
+        let vars = HashMap::new(); // Empty variables map
+        expr.eval(&vars); // Should panic
+    }
+
+    // ===== UNARY MINUS TESTS =====
+
+    #[test]
+    fn evaluate_unary_minus() {
+        let expr = Expression::from_str("-(5)");
+        assert_eq!(expr.eval_no_vars(), -5);
+    }
+
+    #[test]
+    fn evaluate_unary_minus_with_expression() {
+        let expr = Expression::from_str("-(2 + 3)");
+        assert_eq!(expr.eval_no_vars(), -5);
+    }
+
+    #[test]
+    fn evaluate_double_unary_minus() {
+        let expr = Expression::from_str("-(-5)");
+        assert_eq!(expr.eval_no_vars(), 5);
+    }
+
+    // ===== ADDITIONAL EDGE CASE TESTS =====
+
+    #[test]
+    fn tokenize_single_digit() {
+        let lexer = Lexer::new("0");
+        assert_eq!(lexer.tokens[0], Token::Number(0));
+    }
+
+    #[test]
+    fn evaluate_division_by_one() {
+        let expr = Expression::from_str("42 / 1");
+        assert_eq!(expr.eval_no_vars(), 42);
+    }
+
+    #[test]
+    fn evaluate_multiplication_by_zero() {
+        let expr = Expression::from_str("999 * 0");
+        assert_eq!(expr.eval_no_vars(), 0);
+    }
+
+    #[test]
+    fn evaluate_addition_with_zero() {
+        let expr = Expression::from_str("42 + 0");
+        assert_eq!(expr.eval_no_vars(), 42);
+    }
+
+    #[test]
+    fn evaluate_subtraction_with_zero() {
+        let expr = Expression::from_str("42 - 0");
+        assert_eq!(expr.eval_no_vars(), 42);
+    }
+
+    #[test]
+    fn parse_variable_names() {
+        let expr = Expression::from_str("a + B + z");
+        assert_eq!(expr.to_string(), "(+ (+ a B) z)");
+    }
+
+    #[test]
+    #[should_panic(expected = "Unknown operator")]
+    fn evaluate_unknown_operator_panics() {
+        // This would require manually creating an invalid operator expression
+        // since the parser doesn't allow unknown operators
+        let invalid_expr = Expression::Operator('%', vec![
+            Expression::Number(5),
+            Expression::Number(3),
+        ]);
+        invalid_expr.eval_no_vars();
     }
 }
