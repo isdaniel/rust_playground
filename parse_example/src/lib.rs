@@ -107,7 +107,7 @@ impl Expression {
         let mut left_expr = match lexer.next() {
             Token::Number(n) => Expression::Number(*n),
             Token::Variable(v) => Expression::Variable(*v),
-            Token::Operator('-') => Expression::Operator('-', vec![Expression::Number(0.0), Self::parse_expression(lexer, 0.0)]),
+            Token::Operator('-') => Expression::Operator('-', vec![Expression::Number(0.0), Self::parse_expression(lexer, 1.1)]),
             Token::Operator('(') => {
                 let inner_expr = Self::parse_expression(lexer, 0.0);
                 assert_eq!(lexer.next(), &Token::Operator(')'));
@@ -685,5 +685,18 @@ mod tests {
         let result = expr.eval(&vars);
         // 3.14159 * 2.5 * 2.5 = 19.634375
         assert!((result - 19.634375).abs() < 0.001); // More lenient precision check
+    }
+
+    #[test]
+    fn evaluate_negative_first() {
+        let expr = Expression::from_str("-2 + 1");
+        let result = expr.eval_no_vars();
+        // -2 + 1 = -1
+        assert_eq!(result, -1.0);
+
+        let expr = Expression::from_str("1 - 3");
+        let result = expr.eval_no_vars();
+        assert_eq!(result, -2.0);
+
     }
 }
