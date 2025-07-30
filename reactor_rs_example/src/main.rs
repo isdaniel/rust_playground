@@ -105,9 +105,10 @@ Hello Rust!";
 
 fn main() -> io::Result<()> {
     env_logger::init(); 
-
+    let addr = "127.0.0.1:8000";
+    info!("listening : http://{} ...",addr);
     let listener_event_id = 100;
-    let listener = TcpListener::bind("127.0.0.1:8000")?;
+    let listener = TcpListener::bind(addr)?;
     listener.set_nonblocking(true)?;
     let listener_fd = listener.as_raw_fd();
 
