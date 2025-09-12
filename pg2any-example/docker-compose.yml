@@ -45,10 +45,7 @@ services:
 
   CDC Application
   cdc_app:
-    # image: pg2any_cdc_app
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: dog830228/pg2any_app:0.3.3
     container_name: cdc_application
     depends_on:
       postgres:
