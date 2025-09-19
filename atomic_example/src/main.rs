@@ -98,7 +98,7 @@ fn bench_freelock_linkedlist(thread_count: usize, iters: usize) -> u128 {
         handles.push(thread::spawn(move || {
             for i in 0..iters {
                 s.push(t * iters + i);
-                // let _ = s.pop();
+                let _ = s.pop();
             }
         }));
     }
@@ -116,7 +116,7 @@ fn bench_mutex_linkedlist(thread_count: usize, iters: usize) -> u128 {
         handles.push(thread::spawn(move || {
             for i in 0..iters {
                 s.push(t * iters + i);
-                // let _ = s.pop();
+                let _ = s.pop();
             }
         }));
     }

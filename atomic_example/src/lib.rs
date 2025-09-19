@@ -61,12 +61,14 @@ impl<T> FreeList<T> {
                 guard,
             ) {
                 Ok(_) => {
-                    // Take ownership of the node
-                    let owned = unsafe { head.into_owned() };
-                    // Convert to Box<Node<T>>
-                    let boxed: Box<Node<T>> = owned.into_box();
-                    // Destructure to get the value
-                    let Node { value, .. } = *boxed;
+                    // SAFETY: We successfully unlinked this node from the list, so no other thread can access it anymore. We need to read the value before deferring destruction.
+                    let value = unsafe { std::ptr::read(&(*head.as_raw()).value) };
+
+                    // Defer the destruction of the node until all currently pinned threads are unpinned. This ensures memory safety.
+                    unsafe {
+                        guard.defer_destroy(head);
+                    }
+
                     return Some(value);
                 }
                 Err(_) => continue,
@@ -151,17 +153,6 @@ impl<T> MutexLinkedList<T> {
     pub fn is_empty(&self) -> bool {
         let guard = self.head.lock().unwrap();
         guard.is_none()
-    }
-}
-
-impl<T> Drop for MutexLinkedList<T> {
-    fn drop(&mut self) {
-        // Iteratively drop all nodes to avoid stack overflow
-        while let Some(_) = self.pop() {
-            // The pop() method already handles taking the node and
-            // breaking the chain, so we just need to keep calling it
-            // until the list is empty
-        }
     }
 }
 
