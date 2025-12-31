@@ -4,7 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-pg2any_lib = "0.4.1"
+pg2any_lib = "0.5.0"
 tokio = { version = "1.47.1", features = ["full"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing = "0.1.44"
+pg_walstream = "0.2.0"
