@@ -1,0 +1,11 @@
+{
+  "id": 2,
+  "peers": [
+    { "id": 1, "addr": "172.20.0.11:9001" },
+    { "id": 2, "addr": "172.20.0.12:9002" },
+    { "id": 3, "addr": "172.20.0.13:9003" }
+  ],
+  "election_timeout_min_ms": 1500,
+  "election_timeout_max_ms": 3000,
+  "heartbeat_interval_ms": 500
+}

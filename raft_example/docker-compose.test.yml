@@ -1,0 +1,69 @@
+services:
+  node1:
+    build: .
+    container_name: raft-node1
+    volumes:
+      - ./config/node1.json:/etc/raft/config.json
+      - node1-data:/data
+    command: ["/etc/raft/config.json"]
+    ports:
+      - "9001:9001"
+    networks:
+      raft-net:
+        ipv4_address: 172.20.0.11
+
+  node2:
+    build: .
+    container_name: raft-node2
+    volumes:
+      - ./config/node2.json:/etc/raft/config.json
+      - node2-data:/data
+    command: ["/etc/raft/config.json"]
+    ports:
+      - "9002:9002"
+    networks:
+      raft-net:
+        ipv4_address: 172.20.0.12
+
+  node3:
+    build: .
+    container_name: raft-node3
+    volumes:
+      - ./config/node3.json:/etc/raft/config.json
+      - node3-data:/data
+    command: ["/etc/raft/config.json"]
+    ports:
+      - "9003:9003"
+    networks:
+      raft-net:
+        ipv4_address: 172.20.0.13
+
+  test-runner:
+    build: .
+    container_name: raft-test-runner
+    entrypoint: ["/bin/bash"]
+    command: ["/tests/run_all_tests.sh"]
+    cap_add:
+      - NET_ADMIN
+    volumes:
+      - ./tests:/tests
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - node1
+      - node2
+      - node3
+    networks:
+      raft-net:
+        ipv4_address: 172.20.0.100
+
+volumes:
+  node1-data:
+  node2-data:
+  node3-data:
+
+networks:
+  raft-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/24
