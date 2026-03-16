@@ -2,10 +2,7 @@
 
 A Raft consensus protocol implementation in Rust, organized as a two-crate workspace. The core consensus algorithm lives in a reusable library (`raft_core`), while a distributed key/value store (`raft_kv`) demonstrates how to build an application on top of it.
 
-## Table of Contents
-
 - [Raft Example](#raft-example)
-  - [Table of Contents](#table-of-contents)
   - [Overview](#overview)
   - [Architecture](#architecture)
     - [High-Level Design](#high-level-design)
@@ -17,12 +14,7 @@ A Raft consensus protocol implementation in Rust, organized as a two-crate works
     - [raft\_core -- Consensus Library](#raft_core----consensus-library)
     - [raft\_kv -- Key/Value Store Application](#raft_kv----keyvalue-store-application)
   - [Prerequisites](#prerequisites)
-  - [Running a Local Cluster](#running-a-local-cluster)
-    - [With Docker Compose](#with-docker-compose)
-    - [Without Docker](#without-docker)
-  - [Using the Client](#using-the-client)
     - [Interactive Client](#interactive-client)
-    - [Test Client](#test-client)
   - [Configuration](#configuration)
     - [Test Suite 01 -- Normal Workflow](#test-suite-01----normal-workflow)
     - [Test Suite 02 -- Leader Crash and Data Consistency](#test-suite-02----leader-crash-and-data-consistency)
@@ -138,35 +130,59 @@ graph LR
 
 ### Raft Node State Transitions
 
-Each node transitions between three roles based on elections and heartbeats.
+Each node is always in one of three roles: **Follower**, **Candidate**, or **Leader**. The diagram below shows every transition and its trigger.
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Follower : node starts
+    [*] --> Follower
 
-    Follower --> Candidate : election timeout<br/>(no heartbeat received)
-    Candidate --> Candidate : split vote<br/>(restart election)
-    Candidate --> Leader : majority votes received
-    Candidate --> Follower : discovers higher term
-    Leader --> Follower : discovers higher term
+    Follower --> Candidate : election timeout fires\n(no heartbeat from leader)
+    Candidate --> Leader : receives votes from majority
+    Candidate --> Candidate : election timeout fires\n(split vote, new term)
+    Candidate --> Follower : receives AppendEntries\nwith term >= currentTerm
+    Candidate --> Follower : receives RequestVote response\nwith higher term
+    Leader --> Follower : receives RPC\nwith higher term
+```
 
-    state Follower {
-        [*] --> Waiting
-        Waiting --> Waiting : AppendEntries from leader<br/>(reset election timer)
-        Waiting --> Waiting : RequestVote<br/>(grant or deny)
-    }
+The following flowchart shows the internal behavior within each role.
 
-    state Leader {
-        [*] --> Active
-        Active --> Active : heartbeat tick<br/>(send AppendEntries)
-        Active --> Active : client write<br/>(append, replicate, commit)
-        Active --> Active : majority ACK<br/>(advance commit index)
-    }
+```mermaid
+flowchart TD
+    subgraph Follower
+        F1[Wait for events] --> F2{Event type?}
+        F2 -->|AppendEntries RPC| F3[Validate prevLog\nAppend entries\nUpdate commitIndex\nReset election timer]
+        F2 -->|RequestVote RPC| F4{Voted yet?\nCandidate log\nup-to-date?}
+        F4 -->|Yes, grant| F5[Set votedFor\nReset election timer]
+        F4 -->|No, deny| F6[Reply voteGranted=false]
+        F2 -->|Client request| F7["Reply NotLeader\n(include leader addr)"]
+        F2 -->|Election timer expires| F8[Transition to Candidate]
+        F3 --> F1
+        F5 --> F1
+        F6 --> F1
+        F7 --> F1
+    end
 
-    state Candidate {
-        [*] --> Voting
-        Voting --> Voting : vote response<br/>(tally)
-    }
+    subgraph Candidate
+        CA1[Increment term\nVote for self\nSend RequestVote to all peers] --> CA2[Wait for responses]
+        CA2 --> CA3{Result?}
+        CA3 -->|Majority votes| CA4[Transition to Leader]
+        CA3 -->|Higher term seen| CA5[Transition to Follower]
+        CA3 -->|Timeout, no majority| CA1
+    end
+
+    subgraph Leader
+        L1[Initialize nextIndex / matchIndex\nAppend no-op entry] --> L2[Send AppendEntries to all peers]
+        L2 --> L3[Wait for events]
+        L3 --> L4{Event type?}
+        L4 -->|Heartbeat timer| L2
+        L4 -->|Client write| L5[Append to log\nSend AppendEntries\nWait for majority ACK]
+        L4 -->|AppendEntries success| L6[Update matchIndex\nAdvance commitIndex\nApply committed entries]
+        L4 -->|AppendEntries failure| L7[Decrement nextIndex\nRetry on next heartbeat]
+        L4 -->|Higher term seen| L8[Transition to Follower]
+        L5 --> L3
+        L6 --> L3
+        L7 --> L3
+    end
 ```
 
 ### Client Write Flow
@@ -324,65 +340,6 @@ Dependencies: raft_core, tokio, serde, serde_json, tracing, tracing-subscriber.
 - Rust 1.85 or later
 - Docker and Docker Compose (for cluster testing)
 
-## Running a Local Cluster
-
-### With Docker Compose
-
-Start a 3-node cluster:
-
-```bash
-docker compose up --build
-```
-
-This creates three containers on a private bridge network:
-
-| Node | Address | Host Port |
-|---|---|---|
-| node1 | 172.20.0.11:9001 | localhost:9001 |
-| node2 | 172.20.0.12:9002 | localhost:9002 |
-| node3 | 172.20.0.13:9003 | localhost:9003 |
-
-A leader will be elected within a few seconds. Check the container logs to see which node won the election.
-
-To stop and clean up:
-
-```bash
-docker compose down -v
-```
-
-### Without Docker
-
-Start three server processes in separate terminals. Create config files (or use those in `config/`) with `127.0.0.1` addresses instead of Docker IPs:
-
-```json
-{
-  "id": 1,
-  "peers": [
-    { "id": 1, "addr": "127.0.0.1:9001" },
-    { "id": 2, "addr": "127.0.0.1:9002" },
-    { "id": 3, "addr": "127.0.0.1:9003" }
-  ],
-  "election_timeout_min_ms": 1500,
-  "election_timeout_max_ms": 3000,
-  "heartbeat_interval_ms": 500
-}
-```
-
-Then run each node:
-
-```bash
-# Terminal 1
-cargo run --release --bin raft-server -- config/node1_local.json
-
-# Terminal 2
-cargo run --release --bin raft-server -- config/node2_local.json
-
-# Terminal 3
-cargo run --release --bin raft-server -- config/node3_local.json
-```
-
-## Using the Client
-
 ### Interactive Client
 
 ```bash
@@ -405,29 +362,6 @@ bye!
 ```
 
 The client automatically follows `NotLeader` redirects. If you connect to a follower, the request is transparently routed to the current leader.
-
-### Test Client
-
-For scripted use:
-
-```bash
-# Set a value
-raft-test-client 127.0.0.1:9001 set foo bar
-
-# Get a value
-raft-test-client 127.0.0.1:9001 get foo
-
-# Delete a value
-raft-test-client 127.0.0.1:9001 delete foo
-```
-
-Environment variables:
-- `NO_REDIRECT=1` -- disable automatic leader redirect following (useful for determining which node is the leader).
-
-Exit codes:
-- `0` -- success (value printed to stdout)
-- `1` -- error (message on stderr)
-- `2` -- not the leader (leader address printed to stdout)
 
 ## Configuration
 
