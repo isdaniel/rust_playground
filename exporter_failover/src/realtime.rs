@@ -50,6 +50,7 @@ pub async fn realtime_consumer(state: Arc<SharedState>) {
 
     let mut batch: Vec<MetricRecord> = Vec::with_capacity(state.config.normal_batch_size);
     let mut last_flush = tokio::time::Instant::now();
+    let mut was_disconnected = false;
 
     loop {
         // Check if we are still Active
@@ -59,15 +60,9 @@ pub async fn realtime_consumer(state: Arc<SharedState>) {
             continue;
         }
 
-        // Check connection state
-        let conn_state = state.get_connection_state();
-        if conn_state == ConnectionState::Disconnected {
-            info!("WAN disconnected, pausing realtime consumer...");
-            tokio::time::sleep(Duration::from_secs(1)).await;
-            continue;
-        }
-
-        // Poll one message from Kafka
+        // IMPORTANT: Always poll Kafka to keep the consumer's fetch pipeline
+        // alive. Skipping recv() during WAN disconnect causes the internal
+        // fetch state to go stale, preventing message delivery after recovery.
         match tokio::time::timeout(Duration::from_millis(100), consumer.recv()).await {
             Ok(Ok(msg)) => {
                 if let Some(payload) = msg.payload() {
@@ -82,6 +77,27 @@ pub async fn realtime_consumer(state: Arc<SharedState>) {
             Err(_) => {
                 // Poll timeout, check if we should flush
             }
+        }
+
+        // Check connection state AFTER polling Kafka
+        let conn_state = state.get_connection_state();
+        if conn_state == ConnectionState::Disconnected {
+            // Log once on transition, not every iteration
+            if !was_disconnected {
+                info!("WAN disconnected, draining Kafka messages (backfill will replay on recovery)");
+                was_disconnected = true;
+            }
+            // Discard accumulated records — the backfill engine will replay
+            // them from its independent consumer group on WAN recovery.
+            // We don't commit offsets, so a process restart would also replay.
+            batch.clear();
+            last_flush = tokio::time::Instant::now();
+            continue;
+        }
+
+        if was_disconnected {
+            info!("WAN recovered, realtime consumer resuming normal operation");
+            was_disconnected = false;
         }
 
         // Adaptive micro-batch: decide when to flush
