@@ -1,0 +1,38 @@
+[package]
+name = "exporter_failover"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "exporter_failover"
+path = "src/lib.rs"
+
+[[bin]]
+name = "exporter"
+path = "src/main.rs"
+
+[[bin]]
+name = "mock_aws"
+path = "src/bin/mock_aws.rs"
+
+[[bin]]
+name = "producer"
+path = "src/bin/producer.rs"
+
+[dependencies]
+tokio = { version = "1.50.0", features = ["full"] }
+rdkafka = { version = "0.39.0", features = ["cmake-build"] }
+reqwest = { version = "0.12.28", features = ["rustls-tls"] }
+serde = { version = "1.0.188", features = ["derive"] }
+serde_json = "1.0.149"
+serde_yaml = "0.9.33"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+chrono = { version = "0.4.44", features = ["serde"] }
+uuid = { version = "1.22.0", features = ["v4"] }
+anyhow = "1.0.102"
+axum = "0.8.8"
+tower-http = { version = "0.6.8", features = ["cors"] }
+
+[dev-dependencies]
+tokio = { version = "1.50.0", features = ["test-util", "macros", "rt"] }

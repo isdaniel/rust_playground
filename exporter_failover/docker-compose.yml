@@ -1,0 +1,161 @@
+# =============================================================================
+# Docker Compose: Exporter Active/Standby Failover Demo
+#
+# Services:
+#   - kafka: Kafka broker (KRaft mode, no Zookeeper)
+#   - kafka-init: creates required topics
+#   - mock-aws: simulated cloud endpoint (can be toggled on/off)
+#   - producer: generates test metric data
+#   - exporter-active: primary exporter instance
+#   - exporter-standby: secondary exporter instance (takes over on failover)
+# =============================================================================
+
+services:
+  # ── Kafka (KRaft mode, no Zookeeper) ──────────────────────────────────────
+  kafka:
+    image: apache/kafka:3.7.0
+    container_name: kafka
+    ports:
+      - "9094:9094"
+    environment:
+      # KRaft configuration
+      KAFKA_NODE_ID: "1"
+      KAFKA_PROCESS_ROLES: "broker,controller"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:9093"
+      KAFKA_LISTENERS: "PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:9094"
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092,EXTERNAL://localhost:9094"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT"
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
+      # Cluster settings
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_NUM_PARTITIONS: "3"
+      KAFKA_DEFAULT_REPLICATION_FACTOR: "1"
+      # Consumer group rebalance speed
+      KAFKA_GROUP_MIN_SESSION_TIMEOUT_MS: "6000"
+      KAFKA_GROUP_MAX_SESSION_TIMEOUT_MS: "30000"
+      # Required for KRaft
+      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
+    volumes:
+      - kafka_data:/tmp/kraft-combined-logs
+    healthcheck:
+      test: /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list || exit 1
+      interval: 10s
+      timeout: 10s
+      retries: 15
+      start_period: 30s
+
+  # ── Kafka Topic Initialization ──────────────────────────────────────────
+  kafka-init:
+    image: apache/kafka:3.7.0
+    container_name: kafka-init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        echo "Creating Kafka topics..."
+
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists \
+          --topic __exporter_leader --partitions 1 --replication-factor 1
+
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists \
+          --topic metrics.alarm --partitions 3 --replication-factor 1
+
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists \
+          --topic metrics.key --partitions 3 --replication-factor 1
+
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists \
+          --topic metrics.raw --partitions 6 --replication-factor 1
+
+        echo "All topics created:"
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --list
+
+  # ── Mock AWS Endpoint ────────────────────────────────────────────────────
+  mock-aws:
+    build:
+      context: .
+      dockerfile: Dockerfile.tools
+    container_name: mock-aws
+    command: ["/usr/local/bin/mock_aws"]
+    ports:
+      - "8080:8080"
+    environment:
+      - RUST_LOG=info
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  # ── Metric Producer (test data generator) ───────────────────────────────
+  producer:
+    build:
+      context: .
+      dockerfile: Dockerfile.tools
+    container_name: producer
+    command: ["/usr/local/bin/producer"]
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      - KAFKA_BROKERS=kafka:9092
+      - PRODUCE_INTERVAL_MS=500
+      - RUST_LOG=info
+
+  # ── Exporter Active (Server-A) ──────────────────────────────────────────
+  exporter-active:
+    build:
+      context: .
+      dockerfile: Dockerfile.tools
+    container_name: exporter-active
+    command: ["/usr/local/bin/exporter"]
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      mock-aws:
+        condition: service_healthy
+    ports:
+      - "9091:9090"
+    environment:
+      - KAFKA_BROKERS=kafka:9092
+      - AWS_ENDPOINT=http://mock-aws:8080
+      - FAB_ID=TW-1
+      - INSTANCE_ID=exporter-active
+      - PEER_ENDPOINT=exporter-standby:9090
+      - HTTP_PORT=9090
+      - FAILOVER_TIMEOUT_SECS=15
+      - LEADER_CLAIM_INTERVAL_SECS=3
+      - RUST_LOG=info
+
+  # ── Exporter Standby (Server-B) ─────────────────────────────────────────
+  exporter-standby:
+    build:
+      context: .
+      dockerfile: Dockerfile.tools
+    container_name: exporter-standby
+    command: ["/usr/local/bin/exporter"]
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      mock-aws:
+        condition: service_healthy
+    ports:
+      - "9095:9090"
+    environment:
+      - KAFKA_BROKERS=kafka:9092
+      - AWS_ENDPOINT=http://mock-aws:8080
+      - FAB_ID=TW-1
+      - INSTANCE_ID=exporter-standby
+      - PEER_ENDPOINT=exporter-active:9090
+      - HTTP_PORT=9090
+      - FAILOVER_TIMEOUT_SECS=15
+      - LEADER_CLAIM_INTERVAL_SECS=3
+      - RUST_LOG=info
+
+volumes:
+  kafka_data:

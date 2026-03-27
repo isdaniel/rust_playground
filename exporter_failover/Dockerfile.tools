@@ -1,0 +1,21 @@
+# Dockerfile for all binaries: exporter, mock_aws, producer
+FROM rust:1.85-bookworm AS builder
+
+RUN apt-get update && apt-get install -y cmake build-essential libssl-dev pkg-config && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy everything
+COPY Cargo.toml Cargo.lock ./
+COPY src/ src/
+
+# Build all binaries in release mode
+RUN cargo build --release --bin mock_aws --bin producer --bin exporter
+
+# Runtime stage
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y ca-certificates libssl3 curl && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /app/target/release/mock_aws /usr/local/bin/mock_aws
+COPY --from=builder /app/target/release/producer /usr/local/bin/producer
+COPY --from=builder /app/target/release/exporter /usr/local/bin/exporter
