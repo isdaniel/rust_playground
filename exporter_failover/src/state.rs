@@ -130,6 +130,8 @@ mod tests {
             failover_timeout_secs: 15,
             leader_claim_interval_secs: 3,
             http_port: 9090,
+            peer_endpoint: None,
+            startup_grace_secs: 8,
         }
     }
 

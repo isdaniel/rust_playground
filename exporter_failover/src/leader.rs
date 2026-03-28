@@ -1,17 +1,33 @@
 /// Leader Election with Sticky Primary Failover
 ///
-/// Two-layer defense against leadership flip-flop:
+/// Three-layer defense against leadership flip-flop:
 ///
-/// Layer 1 — Cooperative-Sticky Partition Assignment (Kafka-level):
+/// Layer 1 — Startup Grace Period (Application-level):
+///   On startup, the election loop waits `startup_grace_secs` before allowing
+///   promotion.  During this period it consumes messages from `__exporter_leader`
+///   to populate `last_known_leader`, giving the current active leader time to
+///   publish at least 2 claims.
+///
+/// Layer 2 — Peer Health Check (Application-level):
+///   Before promoting, query the peer's `/status` HTTP endpoint.  If the peer
+///   responds with `role: "ACTIVE"`, defer promotion (peer is alive and leading).
+///   Uses a 3-second HTTP timeout — won't delay failover when peer is truly dead.
+///
+/// Layer 3 — Cooperative-Sticky Partition Assignment (Kafka-level):
 ///   `partition.assignment.strategy = cooperative-sticky` preserves existing
 ///   partition assignments during rebalance.  When the old primary recovers
 ///   and rejoins the consumer group, the new primary keeps its partition.
 ///
-/// Layer 2 — Leader Claim Fencing (Application-level):
+/// Layer 4 — Leader Claim Fencing (Application-level):
 ///   The Active instance periodically writes "leader claim" messages to
 ///   `__exporter_leader` with its `instance_id`.  Before promoting, any
 ///   instance checks for recent claims.  If another instance has a fresh
 ///   claim (within `failover_timeout_secs`), promotion is deferred.
+///
+/// Layer 5 — Demotion Grace (Application-level):
+///   Don't demote immediately when partition count drops to 0 (can happen
+///   briefly during cooperative rebalance).  Require 3 consecutive checks
+///   (~6 seconds) with 0 partitions before demoting.
 ///
 /// Together these ensure that after failover, the new primary keeps its role
 /// even when the old primary recovers.
@@ -134,6 +150,38 @@ async fn publish_leader_claim(producer: &FutureProducer, instance_id: &str) {
     }
 }
 
+// ── Peer health check ──────────────────────────────────────────────────────
+
+/// Check whether the peer is currently Active by querying its /status endpoint.
+/// Returns `true` if the peer responds with `role: "ACTIVE"`, `false` otherwise
+/// (unreachable, timeout, non-ACTIVE role, parse error).
+async fn peer_is_active(peer_endpoint: &str) -> bool {
+    let url = format!("http://{}/status", peer_endpoint);
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(3))
+        .build();
+
+    let client = match client {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+
+    match client.get(&url).send().await {
+        Ok(resp) if resp.status().is_success() => {
+            if let Ok(body) = resp.text().await {
+                // Parse the JSON and check the role field
+                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&body) {
+                    if let Some(role) = json.get("role").and_then(|v| v.as_str()) {
+                        return role == "ACTIVE";
+                    }
+                }
+            }
+            false
+        }
+        _ => false,
+    }
+}
+
 // ── Main election loop ──────────────────────────────────────────────────────
 
 /// Run the leader election loop.
@@ -145,6 +193,8 @@ pub async fn leader_election_loop(state: Arc<SharedState>) {
         Duration::from_secs(state.config.failover_timeout_secs);
     let claim_interval =
         Duration::from_secs(state.config.leader_claim_interval_secs);
+    let peer_endpoint = state.config.peer_endpoint.clone();
+    let startup_grace = Duration::from_secs(state.config.startup_grace_secs);
 
     // ── Consumer: cooperative-sticky assignment ──
     let consumer: StreamConsumer = ClientConfig::new()
@@ -155,7 +205,7 @@ pub async fn leader_election_loop(state: Arc<SharedState>) {
         .set("max.poll.interval.ms", "30000")
         .set("partition.assignment.strategy", "cooperative-sticky")
         .set("enable.auto.commit", "true")
-        .set("auto.offset.reset", "latest")
+        .set("auto.offset.reset", "earliest")
         .create()
         .expect("Failed to create leader election consumer");
 
@@ -172,6 +222,7 @@ pub async fn leader_election_loop(state: Arc<SharedState>) {
 
     info!(
         instance = %our_id,
+        startup_grace_secs = startup_grace.as_secs(),
         "Joined leader election group (cooperative-sticky), waiting for partition assignment..."
     );
 
@@ -179,7 +230,24 @@ pub async fn leader_election_loop(state: Arc<SharedState>) {
         .checked_sub(claim_interval)
         .unwrap_or_else(std::time::Instant::now);
 
+    // ── Layer 1: Startup grace period ──
+    let startup_deadline = tokio::time::Instant::now() + startup_grace;
+    let mut startup_complete = false;
+
+    // ── Layer 5: Demotion grace counter ──
+    let mut zero_partition_count: u32 = 0;
+    const DEMOTION_THRESHOLD: u32 = 3;
+
     loop {
+        // Check if startup grace period has elapsed
+        if !startup_complete && tokio::time::Instant::now() >= startup_deadline {
+            startup_complete = true;
+            info!(
+                instance = %our_id,
+                "Startup grace period complete, promotion decisions now active"
+            );
+        }
+
         // Poll for messages with a 2-second timeout.
         match tokio::time::timeout(Duration::from_secs(2), consumer.recv()).await {
             Ok(Ok(msg)) => {
@@ -191,12 +259,35 @@ pub async fn leader_election_loop(state: Arc<SharedState>) {
                 )
                 .await;
 
+                // During startup grace, consume messages but skip promotion checks
+                if !startup_complete {
+                    debug!(
+                        instance = %our_id,
+                        "Startup grace period: consuming claims but deferring promotion"
+                    );
+                    continue;
+                }
+
+                // Reset demotion grace counter — we have a partition (received a message)
+                zero_partition_count = 0;
+
                 // We hold the partition → check if we should promote
                 let mut role = state.ha_role.lock().await;
                 if *role == HaRole::Standby {
                     let claim = state.get_leader_claim().await;
                     let now = Utc::now();
                     if should_promote(&our_id, claim.as_ref(), now, failover_timeout) {
+                        // Layer 2: Peer health check before promoting
+                        if let Some(ref endpoint) = peer_endpoint {
+                            if peer_is_active(endpoint).await {
+                                info!(
+                                    instance = %our_id,
+                                    peer = %endpoint,
+                                    "Peer is ACTIVE, deferring promotion"
+                                );
+                                continue;
+                            }
+                        }
                         info!(
                             instance = %our_id,
                             offset = msg.offset(),
@@ -216,6 +307,15 @@ pub async fn leader_election_loop(state: Arc<SharedState>) {
                 tokio::time::sleep(Duration::from_secs(1)).await;
             }
             Err(_) => {
+                // During startup grace, skip promotion/demotion checks
+                if !startup_complete {
+                    debug!(
+                        instance = %our_id,
+                        "Startup grace period: waiting for claims..."
+                    );
+                    continue;
+                }
+
                 // Timeout: no message. Check partition assignment.
                 let assignment = consumer.assignment();
                 match assignment {
@@ -223,9 +323,23 @@ pub async fn leader_election_loop(state: Arc<SharedState>) {
                         let count = tpl.count();
                         let mut role = state.ha_role.lock().await;
                         if count > 0 && *role == HaRole::Standby {
+                            // Reset demotion grace counter
+                            zero_partition_count = 0;
+
                             let claim = state.get_leader_claim().await;
                             let now = Utc::now();
                             if should_promote(&our_id, claim.as_ref(), now, failover_timeout) {
+                                // Layer 2: Peer health check before promoting
+                                if let Some(ref endpoint) = peer_endpoint {
+                                    if peer_is_active(endpoint).await {
+                                        info!(
+                                            instance = %our_id,
+                                            peer = %endpoint,
+                                            "Peer is ACTIVE, deferring promotion"
+                                        );
+                                        continue;
+                                    }
+                                }
                                 info!(
                                     instance = %our_id,
                                     partitions = count,
@@ -239,11 +353,29 @@ pub async fn leader_election_loop(state: Arc<SharedState>) {
                                 );
                             }
                         } else if count == 0 && *role == HaRole::Active {
-                            warn!(
-                                instance = %our_id,
-                                "Lost all partitions -- demoting to STANDBY"
-                            );
-                            *role = HaRole::Standby;
+                            // Layer 5: Demotion grace — require consecutive 0-partition checks
+                            zero_partition_count += 1;
+                            if zero_partition_count >= DEMOTION_THRESHOLD {
+                                warn!(
+                                    instance = %our_id,
+                                    consecutive_zero_checks = zero_partition_count,
+                                    "Lost all partitions for {} consecutive checks -- demoting to STANDBY",
+                                    DEMOTION_THRESHOLD
+                                );
+                                *role = HaRole::Standby;
+                                zero_partition_count = 0;
+                            } else {
+                                debug!(
+                                    instance = %our_id,
+                                    consecutive_zero_checks = zero_partition_count,
+                                    threshold = DEMOTION_THRESHOLD,
+                                    "Zero partitions detected, demotion grace {}/{}",
+                                    zero_partition_count, DEMOTION_THRESHOLD
+                                );
+                            }
+                        } else if count > 0 {
+                            // Active with partitions — reset demotion counter
+                            zero_partition_count = 0;
                         }
                     }
                     Err(e) => {

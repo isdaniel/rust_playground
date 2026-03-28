@@ -26,6 +26,8 @@ fn test_config(instance_id: &str) -> ExporterConfig {
         failover_timeout_secs: 15,
         leader_claim_interval_secs: 3,
         http_port: 9090,
+        peer_endpoint: None,
+        startup_grace_secs: 8,
     }
 }
 
@@ -258,5 +260,80 @@ fn scenario_rapid_leader_transitions() {
     assert!(
         should_promote("server-a", Some(&claim_b), t33, TIMEOUT),
         "server-a should promote after server-b's claim expires"
+    );
+}
+
+// ── Scenario 9: Restarted node sees fresh claims during grace → stays standby ─
+
+#[tokio::test]
+async fn scenario_restarted_node_sees_claims_during_grace_stays_standby() {
+    // Simulates the fix for the flip-flop bug:
+    // server-a was active, crashes, server-b takes over.
+    // server-a restarts with fresh state (last_known_leader = None).
+    // During the startup grace period, server-a receives server-b's leader claims.
+    // After the grace period, server-a sees server-b's fresh claim → stays standby.
+
+    let state_a = SharedState::new(test_config("server-a"));
+    let now = Utc::now();
+
+    // Initially no known leader (fresh restart)
+    assert!(state_a.get_leader_claim().await.is_none());
+
+    // Without grace period, should_promote would return true (no known leader)
+    assert!(
+        should_promote("server-a", None, now, TIMEOUT),
+        "Without claims, should_promote returns true"
+    );
+
+    // During grace period, server-a receives server-b's claims
+    let claim_time = now - ChronoDuration::seconds(1);
+    state_a.update_leader_claim("server-b", claim_time).await;
+
+    // After grace period, server-a checks should_promote with populated claim
+    let after_grace = now + ChronoDuration::seconds(8);
+    let claim = state_a.get_leader_claim().await;
+    assert!(
+        !should_promote("server-a", claim.as_ref(), after_grace, TIMEOUT),
+        "After grace period, restarted node should see fresh claim and stay standby"
+    );
+}
+
+// ── Scenario 10: Both nodes start fresh, no claims during grace → first promotes ─
+
+#[tokio::test]
+async fn scenario_both_fresh_start_no_claims_first_promotes() {
+    // Both server-a and server-b start fresh simultaneously.
+    // Neither has any claims in the topic. After the grace period,
+    // whichever gets the partition first should promote.
+
+    let state_a = SharedState::new(test_config("server-a"));
+    let state_b = SharedState::new(test_config("server-b"));
+
+    let now = Utc::now();
+
+    // Both have no claims after grace period
+    assert!(state_a.get_leader_claim().await.is_none());
+    assert!(state_b.get_leader_claim().await.is_none());
+
+    // Both would promote if they get the partition (no known leader)
+    assert!(
+        should_promote("server-a", None, now, TIMEOUT),
+        "server-a should promote when no claims exist"
+    );
+    assert!(
+        should_promote("server-b", None, now, TIMEOUT),
+        "server-b should promote when no claims exist"
+    );
+
+    // server-a gets partition first and promotes, starts writing claims
+    state_a.update_leader_claim("server-a", now).await;
+    state_b.update_leader_claim("server-a", now).await;
+
+    // server-b sees server-a's claim → defers
+    let claim_b = state_b.get_leader_claim().await;
+    let t2 = now + ChronoDuration::seconds(2);
+    assert!(
+        !should_promote("server-b", claim_b.as_ref(), t2, TIMEOUT),
+        "server-b should defer after server-a starts claiming"
     );
 }

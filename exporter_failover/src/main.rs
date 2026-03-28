@@ -19,7 +19,7 @@ mod realtime;
 mod state;
 
 use std::sync::Arc;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -67,34 +67,65 @@ async fn main() -> anyhow::Result<()> {
         leader::leader_election_loop(state_leader).await;
     });
 
-    // ── 3. Wait until we become Active ──
-    info!("Waiting for leader election (starting as STANDBY)...");
-    leader::wait_until_active(Arc::clone(&state)).await;
-    info!("Promoted to ACTIVE -- starting worker tasks");
+    // ── 3. Lifecycle loop: wait for promotion, run workers, handle demotion ──
+    //
+    // When demoted, worker tasks exit cleanly (realtime consumer drops its Kafka
+    // consumer, releasing rt-metrics partitions). On re-promotion, workers are
+    // restarted fresh with new consumers.
+    let state_lifecycle = Arc::clone(&state);
+    let lifecycle_handle = tokio::spawn(async move {
+        loop {
+            // Wait until we become Active
+            info!("Waiting for leader election (starting as STANDBY)...");
+            leader::wait_until_active(Arc::clone(&state_lifecycle)).await;
+            info!("Promoted to ACTIVE -- starting worker tasks");
 
-    // ── 4. Start worker tasks (only when Active) ──
-    let state_rt = Arc::clone(&state);
-    let realtime_handle = tokio::spawn(async move {
-        realtime::realtime_consumer(state_rt).await;
+            // Start worker tasks (only when Active)
+            let state_rt = Arc::clone(&state_lifecycle);
+            let realtime_handle = tokio::spawn(async move {
+                realtime::realtime_consumer(state_rt).await;
+            });
+
+            let state_bf = Arc::clone(&state_lifecycle);
+            let backfill_handle = tokio::spawn(async move {
+                backfill::backfill_engine(state_bf).await;
+            });
+
+            let state_hm = Arc::clone(&state_lifecycle);
+            let health_handle = tokio::spawn(async move {
+                health::health_monitor(state_hm).await;
+            });
+
+            // Wait for any worker to exit (realtime exits on demotion)
+            // or for demotion to be detected
+            tokio::select! {
+                _ = realtime_handle => {
+                    warn!("Realtime consumer exited (likely demoted)");
+                }
+                _ = backfill_handle => {
+                    warn!("Backfill engine exited");
+                }
+                _ = health_handle => {
+                    warn!("Health monitor exited");
+                }
+            }
+
+            // Check if we were demoted
+            let role = state_lifecycle.get_role().await;
+            if role == state::HaRole::Standby {
+                info!("Demoted to STANDBY -- workers stopped, waiting for re-promotion");
+                // Loop back to wait_until_active
+            } else {
+                error!("Worker task exited while still Active -- restarting workers");
+            }
+        }
     });
 
-    let state_bf = Arc::clone(&state);
-    let backfill_handle = tokio::spawn(async move {
-        backfill::backfill_engine(state_bf).await;
-    });
-
-    let state_hm = Arc::clone(&state);
-    let health_handle = tokio::spawn(async move {
-        health::health_monitor(state_hm).await;
-    });
-
-    // ── 5. Wait for any task to exit (should not happen) ──
+    // ── 4. Wait for critical tasks ──
     tokio::select! {
         _ = http_handle => error!("HTTP server exited unexpectedly"),
         _ = leader_handle => error!("Leader election loop exited unexpectedly"),
-        _ = realtime_handle => error!("Realtime consumer exited unexpectedly"),
-        _ = backfill_handle => error!("Backfill engine exited unexpectedly"),
-        _ = health_handle => error!("Health monitor exited unexpectedly"),
+        _ = lifecycle_handle => error!("Lifecycle loop exited unexpectedly"),
     }
 
     Ok(())

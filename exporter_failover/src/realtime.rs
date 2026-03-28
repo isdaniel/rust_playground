@@ -55,14 +55,16 @@ pub async fn realtime_consumer(state: Arc<SharedState>) {
     loop {
         // Check if we are still Active
         if !check_still_active(&state).await {
-            info!("No longer Active, pausing realtime consumer");
-            tokio::time::sleep(Duration::from_secs(5)).await;
-            continue;
+            info!(
+                instance = %state.config.instance_id,
+                "No longer Active -- realtime consumer exiting for clean partition handover"
+            );
+            // Drop the consumer by returning. This leaves the rt-metrics consumer
+            // group, triggering a rebalance so the new Active can pick up partitions.
+            return;
         }
 
-        // IMPORTANT: Always poll Kafka to keep the consumer's fetch pipeline
-        // alive. Skipping recv() during WAN disconnect causes the internal
-        // fetch state to go stale, preventing message delivery after recovery.
+        // IMPORTANT: Always poll Kafka to keep the consumer's fetch pipeline alive. Skipping recv() during WAN disconnect causes the internal fetch state to go stale, preventing message delivery after recovery.
         match tokio::time::timeout(Duration::from_millis(100), consumer.recv()).await {
             Ok(Ok(msg)) => {
                 if let Some(payload) = msg.payload() {

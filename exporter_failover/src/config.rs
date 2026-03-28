@@ -24,6 +24,15 @@ pub struct ExporterConfig {
 
     // HTTP server port for health/metrics
     pub http_port: u16,
+
+    // Peer endpoint for health check before promotion (e.g., "exporter-standby:9090")
+    #[serde(default)]
+    pub peer_endpoint: Option<String>,
+
+    // Grace period (seconds) at startup before allowing promotion.
+    // Default: leader_claim_interval_secs * 2 + 2
+    #[serde(default)]
+    pub startup_grace_secs: u64,
 }
 
 impl ExporterConfig {
@@ -55,6 +64,17 @@ impl ExporterConfig {
             .parse()
             .unwrap_or(3);
 
+        let peer_endpoint = std::env::var("PEER_ENDPOINT").ok().and_then(|v| {
+            let trimmed = v.trim().to_string();
+            if trimmed.is_empty() { None } else { Some(trimmed) }
+        });
+
+        let default_grace = leader_claim_interval_secs * 2 + 2;
+        let startup_grace_secs: u64 = std::env::var("STARTUP_GRACE_SECS")
+            .unwrap_or_else(|_| default_grace.to_string())
+            .parse()
+            .unwrap_or(default_grace);
+
         Ok(ExporterConfig {
             kafka_brokers: brokers.split(',').map(|s| s.trim().to_string()).collect(),
             aws_endpoint,
@@ -69,6 +89,8 @@ impl ExporterConfig {
             failover_timeout_secs,
             leader_claim_interval_secs,
             http_port,
+            peer_endpoint,
+            startup_grace_secs,
         })
     }
 }
