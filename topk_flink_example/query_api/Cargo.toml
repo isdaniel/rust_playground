@@ -1,0 +1,15 @@
+[package]
+name = "topk_query_api"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+topk_common = { path = "../common" }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+axum = "0.7"
+redis = { version = "0.25", features = ["tokio-comp"] }

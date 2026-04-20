@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Top-K Dashboard</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: ui-sans-serif, system-ui, sans-serif; margin: 0; padding: 20px;
+         background: #0e1116; color: #e6edf3; }
+  h1 { margin: 0 0 12px; font-size: 20px; }
+  .controls { display: flex; gap: 12px; flex-wrap: wrap; align-items: end;
+              padding: 12px; background: #161b22; border: 1px solid #30363d;
+              border-radius: 8px; margin-bottom: 16px; }
+  .ctrl { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+  .ctrl label { color: #8b949e; }
+  select, input, button { background: #0d1117; color: #e6edf3; border: 1px solid #30363d;
+                          border-radius: 6px; padding: 6px 10px; font-size: 13px; }
+  button { cursor: pointer; }
+  button.primary { background: #238636; border-color: #238636; color: white; }
+  button.primary:hover { background: #2ea043; }
+  #custom-range { display: none; gap: 12px; }
+  #custom-range.show { display: flex; }
+  #status { font-size: 12px; color: #8b949e; margin-left: auto; }
+  #status.err { color: #f85149; }
+  table { width: 100%; border-collapse: collapse; background: #161b22;
+          border: 1px solid #30363d; border-radius: 8px; overflow: hidden; }
+  th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #30363d;
+           font-size: 13px; }
+  th { background: #1f2937; color: #8b949e; font-weight: 600; }
+  tr:last-child td { border-bottom: 0; }
+  .rank { width: 40px; color: #8b949e; }
+  .bar-cell { width: 40%; }
+  .bar { height: 16px; background: linear-gradient(90deg, #1f6feb, #58a6ff);
+         border-radius: 3px; min-width: 1px; }
+  .est { text-align: right; font-variant-numeric: tabular-nums; color: #7ee787; }
+  .meta { color: #8b949e; font-size: 12px; margin-top: 8px; }
+  code { background: #0d1117; padding: 1px 6px; border-radius: 4px;
+         border: 1px solid #30363d; }
+</style>
+</head>
+<body>
+<h1>Top-K Dashboard <span style="color:#8b949e; font-weight:normal; font-size:14px;">(Rust axum + Flink + Redis)</span></h1>
+
+<div class="controls">
+  <div class="ctrl">
+    <label for="window">Window</label>
+    <select id="window">
+      <option value="last_1m">Last 1 min</option>
+      <option value="last_5m" selected>Last 5 min</option>
+      <option value="last_30m">Last 30 min</option>
+      <option value="last_hour">Last 1 hour</option>
+      <option value="all_time">All time</option>
+      <option value="range">Custom range</option>
+    </select>
+  </div>
+  <div class="ctrl">
+    <label for="k">k</label>
+    <input id="k" type="number" min="1" max="1000" value="20" style="width: 70px;">
+  </div>
+  <div class="ctrl">
+    <label for="filter">Filter (item substring)</label>
+    <input id="filter" type="text" placeholder="e.g. item_1" style="width: 180px;">
+  </div>
+  <div id="custom-range">
+    <div class="ctrl">
+      <label for="from">From</label>
+      <input id="from" type="datetime-local" step="1" style="width: 210px;">
+    </div>
+    <div class="ctrl">
+      <label for="to">To</label>
+      <input id="to" type="datetime-local" step="1" style="width: 210px;">
+    </div>
+  </div>
+  <div class="ctrl">
+    <label for="refresh">Auto refresh</label>
+    <select id="refresh">
+      <option value="0">Off</option>
+      <option value="1000">1s</option>
+      <option value="2000" selected>2s</option>
+      <option value="5000">5s</option>
+      <option value="15000">15s</option>
+    </select>
+  </div>
+  <button id="go" class="primary">Refresh</button>
+  <div id="status"></div>
+</div>
+
+<table>
+  <thead>
+    <tr><th class="rank">#</th><th>Item</th><th class="bar-cell"></th><th class="est">Estimate</th></tr>
+  </thead>
+  <tbody id="rows"><tr><td colspan="4" style="text-align:center; color:#8b949e;">No data yet</td></tr></tbody>
+</table>
+<div class="meta" id="meta"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const fmt = n => n.toLocaleString();
+
+function buildUrl() {
+  const w = $('window').value;
+  const k = parseInt($('k').value, 10) || 20;
+  if (w === 'range') {
+    const from = dtToEpoch($('from').value);
+    const to = dtToEpoch($('to').value);
+    if (!from || !to) throw new Error('from/to required for custom range');
+    if (to <= from) throw new Error('`to` must be after `from`');
+    return `/topk/range?from=${from}&to=${to}&k=${k}`;
+  }
+  return `/topk/${w}?k=${k}`;
+}
+
+// Parse the value from an <input type="datetime-local"> — the browser gives
+// us a string like "2026-04-19T08:30:45" in LOCAL time. Convert to epoch seconds.
+function dtToEpoch(s) {
+  if (!s) return null;
+  const ms = new Date(s).getTime();
+  return Number.isFinite(ms) ? Math.floor(ms / 1000) : null;
+}
+
+// Format epoch seconds to the string datetime-local expects, in LOCAL time.
+function epochToDt(epoch) {
+  const d = new Date(epoch * 1000);
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+async function load() {
+  const status = $('status');
+  status.classList.remove('err');
+  try {
+    const url = buildUrl();
+    const t0 = performance.now();
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
+    const data = await r.json();
+    const elapsed = Math.round(performance.now() - t0);
+
+    const needle = $('filter').value.trim().toLowerCase();
+    const filtered = needle ? data.filter(h => h.item.toLowerCase().includes(needle)) : data;
+
+    const rows = $('rows');
+    if (filtered.length === 0) {
+      rows.innerHTML = '<tr><td colspan="4" style="text-align:center; color:#8b949e;">No items match</td></tr>';
+    } else {
+      const max = filtered[0].est || 1;
+      rows.innerHTML = filtered.map((h, i) =>
+        `<tr>
+          <td class="rank">${i + 1}</td>
+          <td>${escapeHtml(h.item)}</td>
+          <td class="bar-cell"><div class="bar" style="width:${(h.est / max * 100).toFixed(1)}%"></div></td>
+          <td class="est">${fmt(h.est)}</td>
+        </tr>`).join('');
+    }
+    $('meta').innerHTML = `<code>${url}</code> · ${data.length} rows · fetched in ${elapsed}ms · ${new Date().toLocaleTimeString()}`;
+    status.textContent = 'ok';
+  } catch (e) {
+    status.textContent = e.message;
+    status.classList.add('err');
+  }
+}
+
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function syncCustomRange() {
+  const show = $('window').value === 'range';
+  $('custom-range').classList.toggle('show', show);
+  if (show && !$('to').value) {
+    const now = Math.floor(Date.now() / 1000);
+    $('to').value = epochToDt(now);
+    $('from').value = epochToDt(now - 600);
+  }
+}
+
+let timer = null;
+function syncTimer() {
+  if (timer) { clearInterval(timer); timer = null; }
+  const ms = parseInt($('refresh').value, 10);
+  if (ms > 0) timer = setInterval(load, ms);
+}
+
+$('window').addEventListener('change', () => { syncCustomRange(); load(); });
+$('k').addEventListener('change', load);
+$('filter').addEventListener('input', load);
+$('from').addEventListener('change', load);
+$('to').addEventListener('change', load);
+$('refresh').addEventListener('change', syncTimer);
+$('go').addEventListener('click', load);
+
+syncCustomRange();
+syncTimer();
+load();
+</script>
+</body>
+</html>

@@ -1,0 +1,17 @@
+[package]
+name = "topk_producer"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+topk_common = { path = "../common" }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+clap = { version = "4", features = ["derive", "env"] }
+rand = { version = "0.8", features = ["small_rng"] }
+rand_distr = "0.4"
+rdkafka = { version = "0.36", default-features = false, features = ["tokio", "cmake-build"] }

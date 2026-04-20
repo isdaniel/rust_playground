@@ -1,0 +1,192 @@
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.3
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+      KAFKA_OPTS: "-Dzookeeper.4lw.commands.whitelist=ruok,srvr"
+    healthcheck:
+      test: ["CMD-SHELL", "echo srvr | nc -w 2 localhost 2181 | grep -q Zookeeper"]
+      interval: 5s
+      retries: 20
+      start_period: 15s
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.3
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    healthcheck:
+      test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:9092", "--list"]
+      interval: 10s
+      retries: 10
+
+  redis:
+    image: redis:7.2-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 10
+
+  flink-jobmanager:
+    build:
+      context: ./flink_job
+    image: topk-flink-job:latest
+    command: jobmanager
+    ports:
+      - "8081:8081"
+    environment:
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: flink-jobmanager
+    depends_on:
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  flink-taskmanager:
+    image: topk-flink-job:latest
+    command: taskmanager
+    scale: 1
+    environment:
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: flink-jobmanager
+        taskmanager.numberOfTaskSlots: 2
+    depends_on:
+      - flink-jobmanager
+
+  job-submitter:
+    image: topk-flink-job:latest
+    depends_on:
+      - flink-jobmanager
+      - flink-taskmanager
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        set -e
+        # Wait for the JobManager REST API to be reachable, then submit the job.
+        until curl -sf http://flink-jobmanager:8081/overview > /dev/null; do
+          echo "waiting for flink jobmanager..."; sleep 2;
+        done
+        echo "submitting job"
+        exec flink run -d -m flink-jobmanager:8081 \
+          -c com.example.topk.TopKJob \
+          /opt/flink/usrlib/topk-flink-job.jar
+    environment:
+      KAFKA_BROKERS: kafka:29092
+      KAFKA_TOPIC: events
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+
+  # ===== Source ingestion =====
+  # Four scenarios drive Kafka so the Top-K system can be exercised end-to-end.
+  # All four share the same built image; each picks a scenario via CLI flags.
+  # Assign them to compose `profiles` so a plain `docker compose up` starts the
+  # baseline zipf stream; extra scenarios are opt-in with `--profile <name>`.
+
+  producer-zipf:
+    build:
+      context: .
+      dockerfile: Dockerfile.rust
+    image: topk-rust:latest
+    profiles: ["", "zipf", "all"]
+    command:
+      - topk_producer
+      - --label=zipf
+      - --scenario=zipf
+      - --brokers=kafka:29092
+      - --topic=events
+      - --rate=5000
+      - --items=10000000
+      - --users=100000000
+      - --zipf-s=1.2
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  producer-burst:
+    image: topk-rust:latest
+    profiles: ["burst", "all"]
+    command:
+      - topk_producer
+      - --label=burst
+      - --scenario=burst
+      - --brokers=kafka:29092
+      - --topic=events
+      - --rate=3000
+      - --items=10000000
+      - --users=100000000
+      - --burst-period-sec=30
+      - --burst-duration-sec=5
+      - --hot-set-size=20
+    depends_on:
+      kafka:
+        condition: service_healthy
+      producer-zipf:
+        condition: service_started
+
+  producer-shifting:
+    image: topk-rust:latest
+    profiles: ["shifting", "all"]
+    command:
+      - topk_producer
+      - --label=shifting
+      - --scenario=shifting
+      - --brokers=kafka:29092
+      - --topic=events
+      - --rate=2000
+      - --items=10000000
+      - --users=100000000
+      - --shift-period-sec=120
+      - --hot-set-size=30
+    depends_on:
+      kafka:
+        condition: service_healthy
+      producer-zipf:
+        condition: service_started
+
+  producer-viral:
+    image: topk-rust:latest
+    profiles: ["viral", "all"]
+    command:
+      - topk_producer
+      - --label=viral
+      - --scenario=viral
+      - --brokers=kafka:29092
+      - --topic=events
+      - --rate=2000
+      - --items=10000000
+      - --users=100000000
+      - --viral-items=5
+      - --viral-ramp-sec=300
+    depends_on:
+      kafka:
+        condition: service_healthy
+      producer-zipf:
+        condition: service_started
+
+  query_api:
+    image: topk-rust:latest
+    command: ["topk_query_api"]
+    environment:
+      REDIS_URL: redis://redis:6379
+      BIND: 0.0.0.0:8080
+      RUST_LOG: info
+    ports:
+      - "8080:8080"
+    depends_on:
+      redis:
+        condition: service_healthy
